@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - PID Control Loop Visualizer</title>
+    <style>
+        /* --- NEON THEME --- */
+        :root {
+            --bg-body: #0b1120;
+            --bg-panel: #111827;
+            --grid-line: #1f2937;
+            
+            --wire-off: #374151;
+            --wire-on: #22c55e;
+            
+            --color-sv: #22c55e; /* Green Target */
+            --color-pv: #ef4444; /* Red Actual */
+            --color-mv: #06b6d4; /* Cyan Output */
+            
+            --term-p: #f59e0b;
+            --term-i: #a855f7;
+            --term-d: #3b82f6;
+            
+            --text-main: #ffffff;
+            --text-muted: #9ca3af;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Consolas, monospace;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-transform: uppercase; font-weight: bold; }
+        .title span { font-size: 0.75rem; color: var(--color-mv); font-weight: bold; }
+
+        /* MAIN LAYOUT */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr 300px;
+            gap: 15px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* PANEL STYLES */
+        .panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .panel-header { 
+            color: #fff; font-weight: bold; border-bottom: 1px solid var(--grid-line); 
+            padding-bottom: 5px; margin-bottom: 10px; font-size: 0.85rem; text-transform: uppercase;
+        }
+
+        /* --- LEFT: PROCESS VISUAL --- */
+        .tank-container {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
+        }
+        .tank-body {
+            width: 120px; height: 200px;
+            border: 3px solid #4b5563;
+            border-radius: 0 0 10px 10px;
+            border-top: none;
+            position: relative;
+            background: rgba(255,255,255,0.02);
+            overflow: hidden;
+        }
+        .water-level {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 50%;
+            background: linear-gradient(to top, rgba(239, 68, 68, 0.4), rgba(239, 68, 68, 0.8));
+            transition: height 0.1s linear;
+            border-top: 2px solid var(--color-pv);
+        }
+        .heater-coil {
+            position: absolute; bottom: 10px; left: 10px; right: 10px; height: 20px;
+            border-radius: 10px; background: #333;
+            transition: background 0.1s;
+        }
+        .heater-coil.active {
+            background: var(--color-mv);
+            box-shadow: 0 0 20px var(--color-mv);
+        }
+        
+        .sensor-readout {
+            position: absolute; right: -70px; top: 50%; 
+            background: #0f172a; padding: 5px; border: 1px solid var(--color-pv); border-radius: 4px;
+            color: var(--color-pv); font-weight: bold; font-family: monospace;
+        }
+
+        /* --- CENTER: GRAPH --- */
+        .graph-container {
+            flex: 1; position: relative; background: #000; border: 1px solid #374151; border-radius: 4px;
+            overflow: hidden; /* Ensure canvas stays inside */
+        }
+        canvas { width: 100%; height: 100%; display: block; }
+        .legend {
+            position: absolute; top: 10px; right: 10px; font-size: 0.75rem; background: rgba(0,0,0,0.7);
+            padding: 5px; border-radius: 4px; display: flex; gap: 10px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* --- RIGHT: PID CONTROLS --- */
+        .inst-box {
+            background: #0f172a; border: 1px solid var(--color-mv); color: var(--color-mv);
+            padding: 10px; font-family: monospace; font-weight: bold; text-align: center;
+            margin-bottom: 20px;
+        }
+
+        /* SLIDERS */
+        .control-group { margin-bottom: 15px; }
+        .control-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: #9ca3af; margin-bottom: 5px; }
+        .val-disp { font-weight: bold; color: white; }
+        
+        /* Helper Text Style */
+        .help-text { font-size: 0.65rem; color: #6b7280; margin-top: 4px; line-height: 1.2; font-style: italic; }
+        
+        input[type=range] { width: 100%; height: 6px; background: #374151; border-radius: 3px; -webkit-appearance: none; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; cursor: pointer;
+        }
+        
+        #sli-p::-webkit-slider-thumb { background: var(--term-p); }
+        #sli-i::-webkit-slider-thumb { background: var(--term-i); }
+        #sli-d::-webkit-slider-thumb { background: var(--term-d); }
+        #sli-sv::-webkit-slider-thumb { background: var(--color-sv); }
+
+        /* PID TERM BARS */
+        .term-viz { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; font-size: 0.7rem; }
+        .term-bar-bg { flex: 1; height: 8px; background: #374151; border-radius: 2px; overflow: hidden; display: flex; }
+        .term-center { width: 50%; height: 100%; border-right: 1px solid #666; position: relative; }
+        .term-fill { height: 100%; transition: width 0.1s; }
+
+        .narrative {
+            margin-top: auto; font-size: 0.8rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;
+            border-left: 3px solid var(--color-mv);
+        }
+
+        .btn-reset {
+            background: #374151; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>PID CONTROL | TEMPERATURE PROCESS</span>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        
+        <div class="panel">
+            <div class="panel-header">The Process (Heater)</div>
+            <div class="tank-container">
+                <div class="tank-body">
+                    <div class="water-level" id="tank-fill"></div>
+                    <div class="heater-coil" id="heater"></div>
+                </div>
+                <div class="sensor-readout" id="pv-readout">0°C</div>
+                <div id="sp-marker" style="position:absolute; left: 80px; width: 10px; height: 0; border-top: 2px dashed var(--color-sv); width: 60px; transition: bottom 0.1s;"></div>
+            </div>
+            
+            <div style="margin-top:10px; font-size:0.8rem; color:#9ca3af; text-align:center;">
+                <strong>PV (Scaled):</strong> <span id="pv-scaled" style="color:var(--color-pv)">0</span> / 4000<br>
+                <strong>MV (Output):</strong> <span id="mv-scaled" style="color:var(--color-mv)">0</span> %
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Real-Time Trend</div>
+            <div class="graph-container">
+                <canvas id="trendCanvas"></canvas>
+                <div class="legend">
+                    <div class="legend-item"><div class="dot" style="background:var(--color-sv)"></div>SV</div>
+                    <div class="legend-item"><div class="dot" style="background:var(--color-pv)"></div>PV</div>
+                    <div class="legend-item"><div class="dot" style="background:var(--color-mv)"></div>MV</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Ladder Instruction</div>
+            <div class="inst-box">
+                PID D0 D10 D100 D200<br>
+                <span style="font-size:0.7rem; color:#fff; opacity:0.7;">(SV) (PV) (Params) (MV)</span>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label"><span>Target Temp (SV)</span> <span id="val-sv" class="val-disp" style="color:var(--color-sv)">50°C</span></div>
+                <input type="range" id="sli-sv" min="0" max="100" value="50">
+            </div>
+
+            <div class="panel-header" style="margin-top:10px;">PID Parameters</div>
+
+            <div class="control-group">
+                <div class="control-label"><span>Kp (Proportional)</span> <span id="val-p" class="val-disp" style="color:var(--term-p)">2.0</span></div>
+                <input type="range" id="sli-p" min="0" max="20" step="0.1" value="2.0">
+                <div class="term-viz">
+                    <span style="color:var(--term-p); width:20px;">P</span>
+                    <div class="term-bar-bg"><div class="term-center"></div><div id="bar-p" class="term-fill" style="background:var(--term-p); width:0%;"></div></div>
+                </div>
+                <div class="help-text">Increase Kp: Makes system react more aggressively to reach target faster (but can cause oscillation).</div>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label"><span>Ti (Integral Time)</span> <span id="val-i" class="val-disp" style="color:var(--term-i)">2000ms</span></div>
+                <input type="range" id="sli-i" min="100" max="10000" step="100" value="2000">
+                <div class="term-viz">
+                    <span style="color:var(--term-i); width:20px;">I</span>
+                    <div class="term-bar-bg"><div class="term-center"></div><div id="bar-i" class="term-fill" style="background:var(--term-i); width:0%;"></div></div>
+                </div>
+                <div class="help-text">Decrease Ti: Corrects steady errors faster, reducing stabilization time (but increases risk of overshoot).</div>
+                <div id="windup-msg" style="font-size:0.6rem; color:#ef4444; display:none; text-align:right;">INTEGRAL WINDUP!</div>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label"><span>Td (Derivative)</span> <span id="val-d" class="val-disp" style="color:var(--term-d)">0ms</span></div>
+                <input type="range" id="sli-d" min="0" max="2000" step="10" value="0">
+                <div class="term-viz">
+                    <span style="color:var(--term-d); width:20px;">D</span>
+                    <div class="term-bar-bg"><div class="term-center"></div><div id="bar-d" class="term-fill" style="background:var(--term-d); width:0%;"></div></div>
+                </div>
+                <div class="help-text">Increase Td: Acts as a brake. Reduces overshoot and oscillation, settling the system faster.</div>
+            </div>
+
+            <div id="narrative" class="narrative">
+                System Stable. Adjust SV to see PID response.
+            </div>
+            
+            <button class="btn-reset" onclick="resetSim()">RESET SIMULATION</button>
+
+        </div>
+    </div>
+
+    <script>
+        // --- SIMULATION CONFIG ---
+        const DT = 0.1; 
+        const MAX_TEMP = 100;
+        
+        // Graph Scale Config
+        const GRAPH_MIN = -10;
+        const GRAPH_MAX = 150;
+        const GRAPH_RANGE = GRAPH_MAX - GRAPH_MIN;
+        
+        // --- STATE ---
+        let sv = 50;    
+        let pv = 0;     
+        let mv = 0;     
+        
+        let kp = 2.0;
+        let ti = 2000;
+        let td = 0;
+        
+        let integral = 0;
+        let prevError = 0;
+        
+        const historySize = 300;
+        let dataSV = new Array(historySize).fill(0);
+        let dataPV = new Array(historySize).fill(0);
+        let dataMV = new Array(historySize).fill(0);
+
+        // --- DOM ---
+        const els = {
+            svSli: document.getElementById('sli-sv'), svVal: document.getElementById('val-sv'),
+            pSli: document.getElementById('sli-p'), pVal: document.getElementById('val-p'),
+            iSli: document.getElementById('sli-i'), iVal: document.getElementById('val-i'),
+            dSli: document.getElementById('sli-d'), dVal: document.getElementById('val-d'),
+            
+            tankFill: document.getElementById('tank-fill'),
+            heater: document.getElementById('heater'),
+            pvReadout: document.getElementById('pv-readout'),
+            spMarker: document.getElementById('sp-marker'),
+            
+            pvScaled: document.getElementById('pv-scaled'),
+            mvScaled: document.getElementById('mv-scaled'),
+            
+            barP: document.getElementById('bar-p'),
+            barI: document.getElementById('bar-i'),
+            barD: document.getElementById('bar-d'),
+            windupMsg: document.getElementById('windup-msg'),
+            narrative: document.getElementById('narrative')
+        };
+
+        const canvas = document.getElementById('trendCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- CANVAS RESIZE HANDLER ---
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.offsetWidth;
+            canvas.height = canvas.parentElement.offsetHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Init
+
+        // --- INPUT HANDLING ---
+        function updateInputs() {
+            sv = parseFloat(els.svSli.value);
+            kp = parseFloat(els.pSli.value);
+            ti = parseFloat(els.iSli.value);
+            td = parseFloat(els.dSli.value);
+
+            els.svVal.innerText = sv + "°C";
+            els.pVal.innerText = kp.toFixed(1);
+            els.iVal.innerText = ti + "ms";
+            els.dVal.innerText = td + "ms";
+            
+            let h = (sv / MAX_TEMP) * 200;
+            els.spMarker.style.bottom = h + "px";
+        }
+
+        els.svSli.oninput = updateInputs;
+        els.pSli.oninput = updateInputs;
+        els.iSli.oninput = updateInputs;
+        els.dSli.oninput = updateInputs;
+
+        // --- PHYSICS LOOP ---
+        setInterval(() => {
+            let error = sv - pv;
+            
+            let pTerm = kp * error;
+            
+            let iInc = (kp * error * (DT / (ti / 1000)));
+            integral += iInc;
+            
+            let iLimit = 100; 
+            let windup = false;
+            if (integral > iLimit) { integral = iLimit; windup = true; }
+            if (integral < -iLimit) { integral = -iLimit; windup = true; }
+            
+            els.windupMsg.style.display = windup ? "block" : "none";
+
+            let dTerm = 0;
+            if (DT > 0) {
+                dTerm = kp * (td / 1000) * ((error - prevError) / DT);
+            }
+            prevError = error;
+
+            mv = pTerm + integral + dTerm;
+            
+            if (mv > 100) mv = 100;
+            if (mv < 0) mv = 0;
+
+            let heatLoss = (pv - 20) * 0.1;
+            if (heatLoss < 0) heatLoss = 0;
+            
+            let heatGain = mv * 0.2;
+            
+            pv = pv + (heatGain - heatLoss) * DT;
+            if (pv < 20) pv = 20;
+
+            updateVisuals(pTerm, integral, dTerm);
+            updateGraph();
+
+        }, 100);
+
+        function updateVisuals(p, i, d) {
+            els.tankFill.style.height = (pv / MAX_TEMP * 100) + "%";
+            els.pvReadout.innerText = pv.toFixed(1) + "°C";
+            els.pvReadout.style.bottom = (pv / MAX_TEMP * 100) + "%";
+            
+            els.heater.style.opacity = (mv / 100) * 0.8 + 0.2;
+            if(mv > 5) els.heater.classList.add('active'); else els.heater.classList.remove('active');
+
+            els.pvScaled.innerText = Math.floor((pv / 100) * 4000);
+            els.mvScaled.innerText = Math.floor(mv);
+
+            updateBar(els.barP, p);
+            updateBar(els.barI, i);
+            updateBar(els.barD, d);
+
+            if (Math.abs(sv - pv) < 1) {
+                els.narrative.innerText = "Process Stable. PID Holding Target.";
+                els.narrative.style.borderLeftColor = "var(--wire-on)";
+            } else if (pv < sv) {
+                els.narrative.innerText = `Heating... P:${p.toFixed(1)} I:${i.toFixed(1)}`;
+                els.narrative.style.borderLeftColor = "var(--color-pv)";
+            } else {
+                els.narrative.innerText = `Cooling... Output Reduced.`;
+                els.narrative.style.borderLeftColor = "#3b82f6";
+            }
+        }
+
+        function updateBar(el, val) {
+            let limit = 50;
+            let pct = (val / limit) * 100;
+            if(pct > 100) pct = 100;
+            if(pct < -100) pct = -100;
+            
+            el.style.width = Math.abs(pct/2) + "%";
+            if (val >= 0) {
+                el.style.marginLeft = "0";
+                el.style.background = getComputedStyle(el).color;
+            } else {
+                el.style.marginLeft = "-" + Math.abs(pct/2) + "%";
+            }
+        }
+
+        function updateGraph() {
+            dataSV.push(sv); dataSV.shift();
+            dataPV.push(pv); dataPV.shift();
+            dataMV.push(mv); dataMV.shift();
+
+            // Clear canvas without resizing it (Optimization)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // GRID LINE 0
+            drawHLine(0, "#374151", 1);
+            // GRID LINE 100
+            drawHLine(100, "#6b7280", 1, true);
+
+            drawTrace(dataSV, "#22c55e", 2);
+            drawTrace(dataPV, "#ef4444", 3);
+            drawTrace(dataMV, "#06b6d4", 1); 
+
+            // LABELS
+            drawLabel(dataSV[historySize-1], "#22c55e", "SV");
+            drawLabel(dataPV[historySize-1], "#ef4444", "PV");
+        }
+
+        function drawHLine(val, color, width, dash) {
+            let pct = (val - GRAPH_MIN) / GRAPH_RANGE;
+            let y = canvas.height - (pct * canvas.height);
+            
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            if(dash) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawTrace(data, color, width) {
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            let step = canvas.width / historySize;
+            
+            for(let i=0; i<data.length; i++) {
+                let x = i * step;
+                
+                // SCALE: -10 to 150
+                let val = data[i];
+                let pct = (val - GRAPH_MIN) / GRAPH_RANGE;
+                let y = canvas.height - (pct * canvas.height);
+                
+                if(i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        function drawLabel(val, color, text) {
+            let pct = (val - GRAPH_MIN) / GRAPH_RANGE;
+            let y = canvas.height - (pct * canvas.height);
+            
+            if(y < 15) y = 15;
+            if(y > canvas.height - 5) y = canvas.height - 5;
+
+            ctx.fillStyle = color;
+            ctx.font = "bold 11px monospace";
+            ctx.fillText(text + ": " + Math.round(val), canvas.width - 55, y - 5);
+        }
+
+        function resetSim() {
+            pv = 20;
+            mv = 0;
+            integral = 0;
+            prevError = 0;
+            dataSV.fill(0); dataPV.fill(0); dataMV.fill(0);
+            updateInputs();
+        }
+
+        updateInputs();
+
+    </script>
+</body>
+</html>

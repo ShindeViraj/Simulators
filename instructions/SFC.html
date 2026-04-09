@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - SFC Visualizer</title>
+    <style>
+        /* --- NEON THEME --- */
+        :root {
+            --bg-body: #0b1120;
+            --bg-panel: #111827;
+            --grid-line: #1f2937;
+            
+            --wire-off: #374151;
+            --wire-on: #22c55e; /* Green for Active Step */
+            --trans-wait: #f59e0b; /* Amber for Waiting Transition */
+            --trans-go: #06b6d4; /* Cyan for Cleared Transition */
+            
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Consolas, monospace;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-transform: uppercase; }
+        .title span { font-size: 0.75rem; color: var(--wire-on); font-weight: bold; }
+
+        /* STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        /* LEFT: SFC DIAGRAM */
+        .sfc-container {
+            flex: 1.5;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            position: relative;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+            /* Grid Background */
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), 
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* SFC ELEMENTS */
+        .sfc-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        /* STEP BOX */
+        .step-box {
+            width: 100px; height: 60px;
+            background: #0b1120;
+            border: 2px solid var(--wire-off);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-family: monospace; font-size: 1rem;
+            color: var(--text-muted);
+            position: relative;
+            z-index: 2;
+            transition: all 0.3s;
+        }
+        /* Initial Step has double border visually (simulated with shadow or pseudo) */
+        .step-box.initial { border-style: double; border-width: 4px; }
+
+        .step-box.active {
+            border-color: var(--wire-on);
+            color: var(--wire-on);
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.3), inset 0 0 10px rgba(34, 197, 94, 0.1);
+            background: rgba(34, 197, 94, 0.05);
+            transform: scale(1.05);
+        }
+
+        /* ACTION BLOCK (Attached to Step) */
+        .action-block {
+            position: absolute;
+            left: 110%; /* To the right of step */
+            top: 10px;
+            width: 80px; height: 40px;
+            background: #1f2937;
+            border: 1px solid var(--wire-off);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; color: #9ca3af;
+            opacity: 0.5;
+            transition: all 0.3s;
+        }
+        /* Connector line */
+        .action-block::before {
+            content: ''; position: absolute; left: -12px; top: 50%;
+            width: 12px; height: 2px; background: var(--wire-off);
+        }
+        
+        .step-box.active + .action-block, 
+        .step-box.active ~ .action-block { /* Sibling selector for structure */
+            opacity: 1;
+            border-color: var(--wire-on);
+            color: white;
+            background: #064e3b;
+            box-shadow: 0 0 10px var(--wire-on);
+        }
+        .step-box.active ~ .action-block::before { background: var(--wire-on); }
+
+        /* TRANSITION (Crossbar) */
+        .transition-bar {
+            width: 40px; height: 4px;
+            background: var(--wire-off);
+            margin: 20px 0;
+            position: relative;
+            z-index: 2;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .transition-bar::after { /* Condition Label */
+            content: attr(data-cond);
+            position: absolute; left: 50px; top: -8px;
+            font-size: 0.75rem; color: var(--text-muted); font-family: monospace; white-space: nowrap;
+        }
+        
+        /* Waiting state (Step above is active) */
+        .transition-bar.waiting { background: var(--trans-wait); box-shadow: 0 0 8px var(--trans-wait); }
+        /* Cleared state (Condition met) */
+        .transition-bar.cleared { background: var(--trans-go); box-shadow: 0 0 15px var(--trans-go); height: 6px; }
+
+        /* LINKS (Vertical Lines) */
+        .link-line {
+            width: 2px; height: 30px;
+            background: var(--wire-off);
+            transition: 0.3s;
+        }
+        .link-line.active { background: var(--wire-on); }
+        .link-line.trans-active { background: var(--trans-go); }
+
+        /* LOOP BACK LINE */
+        .loop-path {
+            position: absolute;
+            left: 50%; bottom: 40px; /* Adjust based on last step */
+            width: 140px; height: 380px; /* Spans up */
+            border-left: 2px solid var(--wire-off);
+            border-bottom: 2px solid var(--wire-off);
+            border-top: 2px solid var(--wire-off);
+            transform: translateX(-190px); /* Move left of center */
+            z-index: 0;
+            opacity: 0.3;
+            transition: 0.5s;
+        }
+        .loop-path.active {
+            border-color: var(--trans-go);
+            opacity: 1;
+            box-shadow: -5px 0 15px rgba(6, 182, 212, 0.2);
+        }
+
+        /* RIGHT: CONTROLS */
+        .data-panel {
+            flex: 1;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .panel-header { 
+            color: #fff; font-weight: bold; 
+            border-bottom: 1px solid var(--grid-line); padding-bottom: 5px; margin-bottom: 5px; 
+            font-size: 0.85rem; text-transform: uppercase;
+        }
+
+        /* Explanation */
+        .explanation-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--wire-off);
+            border-radius: 6px; padding: 12px;
+            font-size: 0.8rem; color: #e5e7eb; line-height: 1.5;
+        }
+        .explanation-box strong { color: var(--wire-on); }
+
+        /* Switches */
+        .switch-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #1f2937; padding: 10px; border-radius: 6px; border: 1px solid #374151; cursor: pointer; transition: 0.2s;
+        }
+        .switch-row.active { background: rgba(6, 182, 212, 0.1); border-color: var(--trans-go); }
+        .switch-indicator { width: 36px; height: 18px; background: #374151; border-radius: 12px; position: relative; transition: 0.3s; }
+        .switch-row.active .switch-indicator { background: var(--trans-go); box-shadow: 0 0 8px var(--trans-go); }
+        .switch-indicator::after { content:''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; background: white; border-radius: 50%; transition: 0.3s; }
+        .switch-row.active .switch-indicator::after { left: 20px; }
+
+        /* Outputs */
+        .led-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #374151; }
+        .led { width: 12px; height: 12px; border-radius: 50%; background: #374151; border: 1px solid #6b7280; transition: 0.2s; }
+        .led.on { background: var(--wire-on); box-shadow: 0 0 10px var(--wire-on); border-color: white; }
+
+        /* Narrative */
+        .narrative-box {
+            background: rgba(0,0,0,0.3); border: 1px solid var(--wire-off);
+            padding: 10px; border-radius: 4px; font-size: 0.8rem; color: #fff; min-height: 40px;
+            display: flex; align-items: center; transition: border-color 0.3s;
+        }
+
+        .footer {
+            margin-top: 10px; padding: 10px; background-color: var(--bg-panel); border-radius: 8px; border: 1px solid var(--grid-line);
+            display: flex; justify-content: center; align-items: center; flex-shrink: 0;
+        }
+        button { padding: 8px 25px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; font-size: 0.8rem; }
+        .btn-reset { background: #374151; color: white; } .btn-reset:hover { background: #4b5563; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>SFC VISUALIZER | SEQUENTIAL FUNCTION CHART</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="sfc-container">
+            <div class="sfc-col">
+                
+                <div id="step-0" class="step-box initial active">S0</div>
+                <div id="link-0" class="link-line active"></div>
+                
+                <div id="trans-0" class="transition-bar waiting" data-cond="X0 (Start)"></div>
+                
+                <div id="link-1" class="link-line"></div>
+
+                <div id="step-1" class="step-box">S20</div>
+                <div class="action-block">OUT Y0</div>
+
+                <div id="link-2" class="link-line"></div>
+
+                <div id="trans-1" class="transition-bar" data-cond="X1 (Next)"></div>
+
+                <div id="link-3" class="link-line"></div>
+
+                <div id="step-2" class="step-box">S21</div>
+                <div class="action-block">OUT Y1</div>
+
+                <div id="link-4" class="link-line"></div>
+
+                <div id="trans-2" class="transition-bar" data-cond="X2 (Loop)"></div>
+
+                <div id="loop-path" class="loop-path"></div>
+
+            </div>
+        </div>
+
+        <div class="data-panel">
+            
+            <div class="panel-header">SFC Concepts</div>
+            <div class="explanation-box">
+                <strong>Sequential Flow:</strong> Only one Step is active at a time (The Green Box).<br>
+                <strong>Transitions:</strong> The system hangs at the amber bar until the condition (Switch) turns ON.<br>
+                <strong>Actions:</strong> Outputs (Y0, Y1) turn ON automatically when their Step becomes active.
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Transitions (Inputs)</div>
+            
+            <div class="switch-row" id="sw-x0" onclick="toggleInput('x0')">
+                <span style="font-size:0.85rem; color:#fff;">X0 (Start Sequence)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x1" onclick="toggleInput('x1')">
+                <span style="font-size:0.85rem; color:#fff;">X1 (Step 1 Done)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x2" onclick="toggleInput('x2')">
+                <span style="font-size:0.85rem; color:#fff;">X2 (Step 2 Done)</span>
+                <div class="switch-indicator"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Actions (Outputs)</div>
+            <div class="led-row">
+                <span style="color:#9ca3af; font-size:0.85rem;">Y0 (Motor)</span>
+                <div class="led" id="led-y0"></div>
+            </div>
+            <div class="led-row">
+                <span style="color:#9ca3af; font-size:0.85rem;">Y1 (Valve)</span>
+                <div class="led" id="led-y1"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">System Narrative</div>
+            <div id="narrative" class="narrative-box" style="border-color:var(--wire-on)">
+                System Idle (S0). Waiting for X0 to Start.
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <button class="btn-reset" onclick="resetSim()">RESET SEQUENCE</button>
+    </div>
+
+    <script>
+        // STATE
+        let currentStep = 0; // 0=S0, 1=S20, 2=S21
+        let inputs = { x0: false, x1: false, x2: false };
+        let transitioning = false;
+
+        // UI ELEMENTS
+        const els = {
+            steps: [document.getElementById('step-0'), document.getElementById('step-1'), document.getElementById('step-2')],
+            trans: [document.getElementById('trans-0'), document.getElementById('trans-1'), document.getElementById('trans-2')],
+            links: [
+                document.getElementById('link-0'), // below S0
+                document.getElementById('link-1'), // below T0
+                document.getElementById('link-2'), // below S20
+                document.getElementById('link-3'), // below T1
+                document.getElementById('link-4')  // below S21
+            ],
+            loopPath: document.getElementById('loop-path'),
+            
+            ledY0: document.getElementById('led-y0'),
+            ledY1: document.getElementById('led-y1'),
+            
+            narrative: document.getElementById('narrative'),
+            switches: {
+                x0: document.getElementById('sw-x0'),
+                x1: document.getElementById('sw-x1'),
+                x2: document.getElementById('sw-x2')
+            }
+        };
+
+        function toggleInput(id) {
+            if(transitioning) return; // Prevent clicking during animation
+
+            inputs[id] = !inputs[id];
+            
+            // Visual Toggle
+            if(inputs[id]) els.switches[id].classList.add('active');
+            else els.switches[id].classList.remove('active');
+
+            checkTransitions();
+        }
+
+        function checkTransitions() {
+            // LOGIC: Check if current step's exit transition is TRUE
+            
+            if (currentStep === 0 && inputs.x0) {
+                executeTransition(0, 1);
+            }
+            else if (currentStep === 1 && inputs.x1) {
+                executeTransition(1, 2);
+            }
+            else if (currentStep === 2 && inputs.x2) {
+                executeTransition(2, 0);
+            }
+        }
+
+        async function executeTransition(fromStepIdx, toStepIdx) {
+            transitioning = true;
+            let transEl = els.trans[fromStepIdx];
+            
+            // 1. Visual: Transition Cleared
+            transEl.classList.remove('waiting');
+            transEl.classList.add('cleared');
+            
+            // Highlight path
+            if(fromStepIdx === 0) els.links[1].classList.add('trans-active');
+            if(fromStepIdx === 1) els.links[3].classList.add('trans-active');
+            if(fromStepIdx === 2) els.loopPath.classList.add('active');
+
+            // Wait for visual effect
+            await new Promise(r => setTimeout(r, 600));
+
+            // 2. Deactivate Old Step
+            els.steps[fromStepIdx].classList.remove('active');
+            els.links[fromStepIdx*2].classList.remove('active'); // Top link of step
+            
+            // Reset Transition Visuals
+            transEl.classList.remove('cleared');
+            // Remove temp path highlights
+            els.links.forEach(l => l.classList.remove('trans-active'));
+            els.loopPath.classList.remove('active');
+
+            // 3. Activate New Step
+            currentStep = toStepIdx;
+            els.steps[toStepIdx].classList.add('active');
+            
+            // Light up link entering new step
+            if(toStepIdx === 0) els.links[0].classList.add('active'); // S0 top link
+            if(toStepIdx === 1) els.links[2].classList.add('active'); // S20 top link
+            if(toStepIdx === 2) els.links[4].classList.add('active'); // S21 top link
+
+            // 4. Update Outputs & Narrative
+            updateSystemState();
+
+            // 5. Prepare Next Transition
+            // Highlight the next transition bar as "Waiting"
+            els.trans[toStepIdx].classList.add('waiting');
+
+            // Reset the switch that caused this transition (Pulse logic simulation)
+            // Or keep it? Usually manual switches stay on. Let's reset for cleaner UX flow? 
+            // No, keep state, user must toggle off manually if they want.
+            // But to prevent instant-skipping if user left next switch ON:
+            // We re-check transitions after a moment.
+            
+            transitioning = false;
+            checkTransitions(); // Chain reaction if next switch is already ON
+        }
+
+        function updateSystemState() {
+            // Reset Outputs
+            els.ledY0.classList.remove('on');
+            els.ledY1.classList.remove('on');
+            
+            // Narrative Colors
+            els.narrative.style.borderColor = "var(--wire-off)";
+
+            if (currentStep === 0) {
+                els.narrative.innerText = "System Idle (S0). Waiting for Start (X0).";
+                els.narrative.style.borderColor = "var(--wire-on)";
+            }
+            else if (currentStep === 1) {
+                // S20 Active -> Y0 ON
+                els.ledY0.classList.add('on');
+                els.narrative.innerText = "Step S20 Active. Motor (Y0) Running. Waiting for Sensor 1 (X1).";
+                els.narrative.style.borderColor = "var(--wire-on)";
+            }
+            else if (currentStep === 2) {
+                // S21 Active -> Y1 ON
+                els.ledY1.classList.add('on');
+                els.narrative.innerText = "Step S21 Active. Valve (Y1) Open. Waiting for Sensor 2 (X2).";
+                els.narrative.style.borderColor = "var(--wire-on)";
+            }
+        }
+
+        function resetSim() {
+            inputs = { x0: false, x1: false, x2: false };
+            Object.values(els.switches).forEach(sw => sw.classList.remove('active'));
+            
+            // Hard Reset Visuals
+            els.steps.forEach(s => s.classList.remove('active'));
+            els.trans.forEach(t => { t.classList.remove('waiting'); t.classList.remove('cleared'); });
+            els.links.forEach(l => { l.classList.remove('active'); l.classList.remove('trans-active'); });
+            els.loopPath.classList.remove('active');
+            
+            // Set Initial
+            currentStep = 0;
+            els.steps[0].classList.add('active');
+            els.links[0].classList.add('active');
+            els.trans[0].classList.add('waiting');
+            
+            updateSystemState();
+        }
+
+        // Init
+        resetSim();
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQUAREWAVE - Universal Data Simulator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <style>
+        /* --- CORE THEME --- */
+        :root {
+            --bg-dark: #121212;
+            --panel-bg: #1e1e24;
+            --live-color: #00f2ff;
+            --live-glow: 0 0 10px #00f2ff;
+            --accent-orange: #ff9f43;
+            --accent-green: #2ecc71;
+            --accent-pink: #ff007f;
+            --accent-purple: #9c27b0;
+            --text-main: #e0e0e0;
+            --text-sub: #a0a0a0;
+        }
+
+        body, html { height: 100%; overflow: hidden; background-color: var(--bg-dark); font-family: 'Segoe UI', system-ui, sans-serif; color: var(--text-main); }
+        .page-wrapper { height: 100vh; display: flex; flex-direction: column; background: radial-gradient(circle at center, #1a1a20 0%, #0d0d10 100%); }
+
+        /* HEADER */
+        .company-header {
+            background: linear-gradient(180deg, #2b2b33 0%, #1a1a1f 100%);
+            border-bottom: 3px solid var(--live-color);
+            padding: 15px 0; box-shadow: 0 5px 20px rgba(0,0,0,0.5); flex-shrink: 0; z-index: 10;
+        }
+        .company-title { color: #fff; text-transform: uppercase; font-weight: 900; letter-spacing: 2px; margin: 0; font-size: 1.6rem; }
+
+        .content-area { flex: 1; padding: 20px; overflow: hidden; display: flex; gap: 20px; }
+
+        /* PANELS */
+        .panel {
+            background-color: var(--panel-bg); border: 1px solid #333; border-radius: 12px;
+            display: flex; flex-direction: column; box-shadow: inset 0 0 50px rgba(0,0,0,0.5); overflow: hidden;
+        }
+        .panel-header {
+            background: rgba(255,255,255,0.05); padding: 15px; border-bottom: 1px solid #333;
+            font-weight: bold; color: var(--live-color); text-transform: uppercase; letter-spacing: 1px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .panel-body { padding: 20px; overflow-y: auto; flex: 1; position: relative; display: flex; flex-direction: column;}
+
+        /* --- LEFT EDITOR --- */
+        /* Input Field Styling */
+        .direct-input-group {
+            margin-bottom: 20px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid #444;
+        }
+        .direct-input-label { font-size: 0.75rem; color: #aaa; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        .main-input {
+            width: 100%; background: #000; border: 1px solid #555; color: #fff; padding: 10px;
+            font-family: 'Courier New', monospace; font-size: 1.5rem; border-radius: 4px; text-align: center;
+        }
+        .main-input:focus { outline: none; border-color: var(--live-color); box-shadow: 0 0 10px rgba(0,242,255,0.2); }
+
+        .editor-container {
+            display: flex; justify-content: center; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 10px;
+        }
+        
+        /* Byte Grouping */
+        .byte-group {
+            display: flex; gap: 4px; padding: 8px; background: rgba(255,255,255,0.03);
+            border-radius: 6px; border: 1px solid #333; position: relative; margin-bottom: 15px;
+        }
+        
+        .bit-switch {
+            width: 40px; height: 70px; background: #2a2a30; border: 2px solid #444; border-radius: 4px;
+            cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            padding: 5px 0; transition: all 0.1s;
+        }
+        .bit-switch:hover { border-color: #666; transform: translateY(-1px); }
+        .bit-switch.active {
+            border-color: var(--live-color); box-shadow: var(--live-glow); background: rgba(0, 242, 255, 0.15);
+        }
+        .bit-val-disp { font-size: 1.4rem; font-weight: bold; color: #555; }
+        .bit-switch.active .bit-val-disp { color: #fff; text-shadow: 0 0 8px var(--live-color); }
+        
+        .bit-power { 
+            font-size: 0.65rem; 
+            color: #888; 
+            font-family: monospace; 
+            font-weight: 900; 
+        }
+        .bit-switch.active .bit-power { color: var(--live-color); }
+
+        /* Left Data Grid */
+        .data-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
+        .data-card {
+            background: rgba(0,0,0,0.3); border-left: 3px solid var(--accent-orange); padding: 10px 15px; border-radius: 4px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .data-title { font-size: 0.8rem; color: var(--text-sub); text-transform: uppercase; font-weight: bold; }
+        .data-value { font-size: 1.2rem; font-weight: bold; color: #fff; font-family: 'Courier New', monospace; text-align: right; }
+        .sub-section-title { color: var(--live-color); font-size: 0.75rem; margin-top: 10px; margin-bottom: 5px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+
+        /* --- RIGHT PANEL --- */
+        .scale-nav { display: flex; gap: 5px; margin-bottom: 20px; flex-wrap: wrap; flex-shrink: 0; }
+        .nav-btn {
+            background: #2a2a30; border: 1px solid #444; color: #aaa; padding: 8px 12px;
+            border-radius: 4px; cursor: pointer; font-size: 0.85rem; flex: 1; transition: all 0.2s; text-align: center; white-space: nowrap;
+        }
+        .nav-btn:hover { background: #333; }
+        .nav-btn.active {
+            background: var(--live-color); color: #000; font-weight: bold;
+            box-shadow: 0 0 15px rgba(0, 242, 255, 0.4); border-color: var(--live-color);
+        }
+
+        /* Visualizer */
+        .viz-info-bar {
+            display: flex; justify-content: space-between; font-size: 0.8rem; color: #888; margin-bottom: 5px; flex-shrink: 0;
+        }
+        .viz-container {
+            flex: 1; background: #000; border: 1px solid #333; border-radius: 8px;
+            overflow-y: auto; padding: 20px; position: relative;
+            display: flex; align-items: center; justify-content: center; flex-direction: column;
+        }
+        
+        .viz-grid-bits { display: grid; gap: 5px; justify-content: center; }
+        
+        /* Box Styling */
+        .viz-bit {
+            width: 40px; height: 40px; background: #222; border-radius: 4px; transition: background 0.1s; cursor: pointer;
+            border: 1px solid #333; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #666; font-size: 0.7rem; font-family: monospace; font-weight: bold; user-select: none;
+            position: relative; overflow: hidden;
+        }
+        .viz-bit:hover { border-color: #666; transform: scale(1.1); z-index: 2; }
+        .viz-bit.on { background: var(--live-color); box-shadow: 0 0 8px var(--live-color); border-color: var(--live-color); color: #000; }
+        
+        .viz-val-text { 
+            font-size: 0.6rem; text-align: center; line-height: 1; width: 100%; word-wrap: break-word; padding: 0 2px;
+        }
+        .viz-bit.tiny-text .viz-val-text { font-size: 0.5rem; letter-spacing: -0.5px; }
+
+        .ascii-display {
+            font-size: 5rem; color: var(--accent-pink); font-family: 'Courier New', monospace; font-weight: bold;
+            text-shadow: 0 0 20px var(--accent-pink); border: 2px solid #333; padding: 20px; border-radius: 10px;
+            min-width: 150px; text-align: center;
+        }
+
+        @media (max-width: 1000px) { .content-area { flex-direction: column; height: auto; } .page-wrapper { overflow-y: auto; height: auto; } .panel { height: 600px; } }
+    </style>
+</head>
+<body>
+
+    <div class="page-wrapper">
+        <header class="company-header text-center">
+            <h1 class="company-title">SQUAREWAVE AUTOMATION TECHNOLOGIES PVT.LTD.</h1>
+        </header>
+
+        <div class="content-area">
+            
+            <div class="panel" style="flex: 1.2;">
+                <div class="panel-header">
+                    <span><i class="bi bi-keyboard me-2"></i> Input & Editor</span>
+                    <span class="badge bg-secondary" id="editor-mode-text">Byte</span>
+                </div>
+                <div class="panel-body">
+                    
+                    <div class="direct-input-group">
+                        <div class="direct-input-label" id="input-label">Enter Value (Int / Float / Char):</div>
+                        <input type="text" id="val-input" class="main-input" placeholder="0" oninput="handleTextInput()">
+                    </div>
+
+                    <div id="editor-area" class="editor-container"></div>
+
+                    <div id="data-panel" class="mt-4"></div>
+
+                </div>
+            </div>
+
+            <div class="panel" style="flex: 1.8;">
+                <div class="panel-header">
+                    <span><i class="bi bi-cpu me-2"></i> Data Visualizer</span>
+                </div>
+                <div class="panel-body d-flex flex-column">
+                    
+                    <div class="scale-nav">
+                        <div class="nav-btn" onclick="changeScale(0)">Bit</div>
+                        <div class="nav-btn" onclick="changeScale(1)">Nibble</div>
+                        <div class="nav-btn active" onclick="changeScale(2)">Byte</div>
+                        <div class="nav-btn" onclick="changeScale(3)" style="color:var(--accent-pink)">Character</div>
+                        <div class="nav-btn" onclick="changeScale(4)">Word (16-bit)</div>
+                        <div class="nav-btn" onclick="changeScale(5)">DWord (32-bit)</div>
+                    </div>
+
+                    <div class="viz-info-bar">
+                        <span id="viz-status">Visualization</span>
+                        <span id="viz-count">0 Blocks</span>
+                    </div>
+                    
+                    <div class="viz-container" id="viz-area"></div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- SOUND ENGINE ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+            if (type === 'on') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(880, audioCtx.currentTime); 
+                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            } else {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            }
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        // --- DATA DEFS ---
+        const scales = [
+            { name: "Bit", bits: 1, type: "basic" },
+            { name: "Nibble", bits: 4, type: "basic" },
+            { name: "Byte", bits: 8, type: "basic" },
+            { name: "Character (ASCII)", bits: 8, type: "char" },
+            { name: "Word (16-bit)", bits: 16, type: "word" },
+            { name: "Double Word (32-bit)", bits: 32, type: "dword" }
+        ];
+
+        let currentScaleIdx = 2; // Start at Byte
+        let currentDecimal = 0n; // Using BigInt to hold raw bits
+
+        // --- INIT & NAV ---
+        function changeScale(index) {
+            currentScaleIdx = index;
+            const scale = scales[index];
+
+            document.querySelectorAll('.nav-btn').forEach((btn, i) => btn.classList.toggle('active', i === index));
+            document.getElementById('editor-mode-text').innerText = scale.name;
+
+            // Reset Input
+            const inputEl = document.getElementById('val-input');
+            const labelEl = document.getElementById('input-label');
+            
+            if (scale.type === 'char') {
+                labelEl.innerText = "Enter Character:";
+                inputEl.maxLength = 1;
+                let val = Number(currentDecimal);
+                inputEl.value = (val >= 32 && val <= 126) ? String.fromCharCode(val) : "";
+            } else if (scale.type === 'dword') {
+                labelEl.innerText = "Enter Value (Int / Float):";
+                inputEl.removeAttribute('maxLength');
+                inputEl.value = currentDecimal.toString();
+            } else {
+                labelEl.innerText = "Enter Decimal Value:";
+                inputEl.removeAttribute('maxLength');
+                inputEl.value = currentDecimal.toString();
+            }
+
+            const max = (1n << BigInt(scale.bits)) - 1n;
+            if(currentDecimal > max) currentDecimal = currentDecimal & max;
+
+            renderEditor(); 
+            renderVisualizer();
+            updateDataPanel();
+        }
+
+        function handleTextInput() {
+            const inputEl = document.getElementById('val-input');
+            const val = inputEl.value;
+            const scale = scales[currentScaleIdx];
+            
+            let needsUpdate = false;
+
+            if (scale.type === 'char') {
+                if (val.length > 0) currentDecimal = BigInt(val.charCodeAt(0));
+                else currentDecimal = 0n;
+            } else if (scale.type === 'dword') {
+                // Float / Int handling for 32-bit
+                if (val.includes('.') && !isNaN(val)) {
+                    let buffer = new ArrayBuffer(4);
+                    new DataView(buffer).setFloat32(0, parseFloat(val));
+                    currentDecimal = BigInt(new DataView(buffer).getUint32(0));
+                } else {
+                    try {
+                        let intVal = parseInt(val);
+                        if(isNaN(intVal)) throw "NaN";
+                        
+                        // --- CLAMPING LOGIC ---
+                        const maxUnsigned = 4294967295; // 2^32 - 1
+                        
+                        // Check if input is simply too large for 32-bit unsigned
+                        if (intVal > maxUnsigned) {
+                            intVal = maxUnsigned;
+                            needsUpdate = true;
+                        }
+
+                        if (intVal < 0) {
+                            // Negative logic: min signed 32-bit is -2147483648
+                            if (intVal < -2147483648) {
+                                intVal = -2147483648;
+                                needsUpdate = true;
+                            }
+                            let buffer = new ArrayBuffer(4);
+                            new DataView(buffer).setInt32(0, intVal);
+                            currentDecimal = BigInt(new DataView(buffer).getUint32(0));
+                        } else {
+                            currentDecimal = BigInt(intVal);
+                        }
+                    } catch (e) {
+                        currentDecimal = 0n;
+                    }
+                }
+            } else {
+                // Standard Integer handling (Bit, Nibble, Byte, Word)
+                try {
+                    if (val === "") currentDecimal = 0n;
+                    else {
+                        let intVal = parseInt(val);
+                        if(isNaN(intVal)) throw "NaN";
+                        
+                        // --- CLAMPING LOGIC ---
+                        const maxVal = Number((1n << BigInt(scale.bits)) - 1n);
+                        
+                        // Clamp Max
+                        if (intVal > maxVal) {
+                            intVal = maxVal;
+                            needsUpdate = true;
+                        }
+                        
+                        // Signed Word Check (-32768)
+                        if (scale.type === 'word' && intVal < -32768) {
+                             intVal = -32768;
+                             needsUpdate = true;
+                        }
+
+                        if (intVal < 0) {
+                             // Handle negatives by wrapping (2's complement logic)
+                             let bits = scale.bits;
+                             let max = 1n << BigInt(bits);
+                             currentDecimal = max + BigInt(intVal);
+                        } else {
+                            currentDecimal = BigInt(intVal);
+                        }
+                    }
+                } catch (e) {
+                    currentDecimal = 0n;
+                }
+            }
+            
+            // Safety Clamp
+            const maxBits = (1n << BigInt(scale.bits)) - 1n;
+            currentDecimal = currentDecimal & maxBits;
+            
+            // Update Input if clamped
+            if(needsUpdate) {
+                // Determine format
+                if(scale.type === 'word' && Number(currentDecimal) > 32767) {
+                     // If user was typing a signed negative, keep it signed?
+                     // Simplest UX: Show the clamped value as is.
+                     // But if they typed 70000 -> clamped to 65535.
+                     inputEl.value = Number(currentDecimal); 
+                } else {
+                     inputEl.value = Number(currentDecimal); 
+                }
+            }
+
+            updateEditorSwitches();
+            renderVisualizer();
+            updateDataPanel();
+        }
+
+        function toggleSwitch(bitIndex) {
+            const mask = 1n << BigInt(bitIndex);
+            const willBeOn = (currentDecimal & mask) === 0n;
+            playSound(willBeOn ? 'on' : 'off');
+            currentDecimal = currentDecimal ^ mask;
+            
+            document.getElementById('val-input').value = currentDecimal.toString();
+
+            updateEditorSwitches();
+            renderVisualizer();
+            updateDataPanel();
+        }
+
+        // --- RENDERERS ---
+        function renderEditor() {
+            const container = document.getElementById('editor-area');
+            container.innerHTML = '';
+            const bits = scales[currentScaleIdx].bits;
+            
+            for(let i = bits - 1; i >= 0; i--) {
+                if ((i + 1) % 8 === 0 && bits > 4) {
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'byte-group';
+                    for(let j=0; j<8; j++) {
+                        let bIdx = i - j;
+                        groupDiv.appendChild(createSwitch(bIdx));
+                    }
+                    container.appendChild(groupDiv);
+                    i -= 7; continue;
+                }
+                container.appendChild(createSwitch(i));
+            }
+            updateEditorSwitches();
+        }
+
+        function createSwitch(i) {
+            const sw = document.createElement('div');
+            sw.className = 'bit-switch';
+            sw.id = `sw-${i}`;
+            sw.onclick = () => toggleSwitch(i);
+            
+            // --- UPDATED LAYOUT: Powers inside the box ---
+            sw.innerHTML = `
+                <div class="bit-power">2<sup>${i}</sup></div>
+                <div class="bit-val-disp">0</div>
+            `;
+            return sw;
+        }
+
+        function updateEditorSwitches() {
+            const bits = scales[currentScaleIdx].bits;
+            for(let i=0; i<bits; i++) {
+                const el = document.getElementById(`sw-${i}`);
+                if(!el) continue;
+                const isOn = (currentDecimal >> BigInt(i)) & 1n;
+                const text = el.querySelector('.bit-val-disp');
+                if(isOn) { el.classList.add('active'); text.innerText = '1'; } 
+                else { el.classList.remove('active'); text.innerText = '0'; }
+            }
+        }
+
+        function updateDataPanel() {
+            const panel = document.getElementById('data-panel');
+            const type = scales[currentScaleIdx].type;
+            const val = Number(currentDecimal); 
+            
+            let html = `
+                <div class="data-card"><span class="data-title">Binary</span><span class="data-value" style="font-size:1rem">${currentDecimal.toString(2).padStart(scales[currentScaleIdx].bits, '0')}</span></div>
+                <div class="data-card mt-2" style="border-left-color: var(--live-color)"><span class="data-title">Hexadecimal</span><span class="data-value">0x${currentDecimal.toString(16).toUpperCase()}</span></div>
+                <div class="data-card mt-2" style="border-left-color: var(--accent-purple)"><span class="data-title">Octal</span><span class="data-value">0o${currentDecimal.toString(8)}</span></div>
+            `;
+
+            if (type === 'word') {
+                const unsigned = val;
+                let signed = val;
+                if(val >= 32768) signed = val - 65536;
+
+                html += `<div class="sub-section-title">16-BIT WORD</div>
+                    <div class="data-card" style="border-left-color: var(--accent-green)"><span class="data-title">Unsigned</span><span class="data-value">${unsigned}</span></div>
+                    <div class="data-card mt-2" style="border-left-color: var(--accent-pink)"><span class="data-title">Signed</span><span class="data-value">${signed}</span></div>`;
+            } else if (type === 'dword') {
+                const unsigned = Number(currentDecimal & 0xFFFFFFFFn);
+                let signed = unsigned;
+                if (unsigned >= 2147483648) signed = unsigned - 4294967296;
+                
+                const buffer = new ArrayBuffer(4); new DataView(buffer).setUint32(0, unsigned);
+                const real = new DataView(buffer).getFloat32(0).toFixed(4); 
+
+                html += `<div class="sub-section-title">32-BIT DWORD</div>
+                    <div class="data-card" style="border-left-color: var(--accent-green)"><span class="data-title">Unsigned</span><span class="data-value">${unsigned}</span></div>
+                    <div class="data-card mt-2" style="border-left-color: var(--accent-pink)"><span class="data-title">Signed</span><span class="data-value">${signed}</span></div>
+                    <div class="data-card mt-2" style="border-left-color: var(--accent-orange)"><span class="data-title">REAL (Float)</span><span class="data-value">${real}</span></div>`;
+            } else if (type === 'char') {
+                let charCode = Number(currentDecimal);
+                html += `<div class="sub-section-title">ASCII</div><div class="data-card" style="border-left-color: var(--accent-pink)"><span class="data-title">Code (Dec)</span><span class="data-value">${charCode}</span></div>`;
+            } else {
+                html += `<div class="data-card mt-2" style="border-left-color: #9c27b0"><span class="data-title">Decimal</span><span class="data-value">${currentDecimal.toString()}</span></div>`;
+            }
+            panel.innerHTML = html;
+        }
+
+        function renderVisualizer() {
+            const container = document.getElementById('viz-area');
+            const scale = scales[currentScaleIdx];
+            container.innerHTML = '';
+            document.getElementById('viz-status').innerText = `Visualizing ${scale.bits} Bits`;
+            document.getElementById('viz-count').innerText = `${scale.bits} Blocks`;
+
+            if (scale.type === 'char') {
+                const charCode = Number(currentDecimal);
+                const charStr = (charCode >= 32 && charCode <= 126) ? String.fromCharCode(charCode) : ((charCode===0)?'NULL':'?');
+                container.innerHTML = `<div class="ascii-display">${charStr}</div>`;
+                return;
+            }
+
+            const grid = document.createElement('div');
+            grid.className = 'viz-grid-bits';
+            if(scale.bits <= 8) grid.style.gridTemplateColumns = "repeat(8, 1fr)";
+            else if(scale.bits === 16) grid.style.gridTemplateColumns = "repeat(8, 1fr)";
+            else if(scale.bits === 32) grid.style.gridTemplateColumns = "repeat(8, 1fr)";
+
+            for (let i = scale.bits - 1; i >= 0; i--) {
+                const bit = document.createElement('div');
+                bit.className = 'viz-bit';
+                if(scale.bits > 16) bit.classList.add('tiny-text'); 
+
+                const isOn = (currentDecimal >> BigInt(i)) & 1n;
+                if (isOn) { bit.classList.add('on'); } 
+                
+                bit.innerHTML = `<span class="viz-val-text">${Math.pow(2, i)}</span>`;
+
+                bit.onclick = () => toggleSwitch(i);
+                grid.appendChild(bit);
+            }
+            container.appendChild(grid);
+        }
+
+        // Init
+        changeScale(2);
+    </script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - FOR/NEXT Loop Logic</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-line: #334155;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 15px 25px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.2rem; letter-spacing: 1px; color: white; text-transform: uppercase; }
+        .title span { font-size: 0.8rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* MAIN STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            min-height: 0;
+            position: relative;
+        }
+
+        /* LADDER CANVAS */
+        .program-container {
+            flex: 2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ladder-view {
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px; 
+            position: relative;
+        }
+
+        /* Rails */
+        .rail { position: absolute; width: 4px; background: #475569; top: 0; bottom: 0; z-index: 1; }
+        .rail.left { left: 20px; }
+        .rail.right { right: 20px; }
+
+        /* Rungs */
+        .rung {
+            display: flex;
+            align-items: center;
+            height: 60px;
+            position: relative;
+            padding-left: 10px;
+            transition: background 0.1s;
+        }
+        .rung.scan-active { background: rgba(6, 182, 212, 0.05); }
+
+        /* Wires */
+        .wire { height: 2px; background: #64748b; flex-grow: 1; transition: background 0.1s; }
+        .wire.active { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .wire.fixed { flex-grow: 0; width: 30px; }
+
+        /* CONTACT SYMBOL */
+        .symbol {
+            width: 40px; height: 40px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; margin: 0 5px;
+        }
+        .contact-draw { 
+            width: 100%; height: 50%; 
+            border-left: 2px solid #94a3b8; border-right: 2px solid #94a3b8; 
+            position: relative; 
+        }
+        .symbol.active .contact-draw { border-color: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); }
+        .contact-label { 
+            position: absolute; top: -8px; font-size: 0.75rem; 
+            color: var(--accent-cyan); white-space: nowrap; font-weight: bold;
+        }
+
+        /* Instructions */
+        .instruction-block {
+            border: 1px solid #94a3b8; 
+            color: white; 
+            padding: 8px 15px; 
+            font-family: monospace; 
+            font-weight: bold; 
+            font-size: 1rem;
+            min-width: 120px; 
+            text-align: center;
+            background: var(--bg-dark);
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        /* Logic Colors */
+        .instruction-block.for { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .instruction-block.next { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .instruction-block.inc { border-color: var(--accent-green); color: var(--accent-green); }
+
+        .instruction-block.executing { 
+            background: rgba(255, 255, 255, 0.1); 
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        /* Status Bit on Block */
+        .status-bit {
+            width: 10px; height: 10px;
+            background-color: #334155;
+            border: 1px solid #64748b;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        .status-bit.on {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+            border-color: white;
+        }
+
+        /* Scan Cursor */
+        .scan-line {
+            position: absolute; left: 0; right: 0; height: 3px;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan);
+            z-index: 10;
+            pointer-events: none;
+            transition: top 0.1s linear;
+            display: none; 
+        }
+
+        /* Bracket Visualization */
+        .loop-bracket {
+            position: absolute;
+            right: 45px;
+            top: 70px; 
+            height: 120px; 
+            width: 15px;
+            border-right: 2px dashed #475569;
+            border-top: 2px dashed #475569;
+            border-bottom: 2px dashed #475569;
+            opacity: 0.3;
+            transition: 0.2s;
+        }
+        .loop-bracket.active { border-color: var(--accent-cyan); opacity: 1; box-shadow: 2px 0 10px rgba(6, 182, 212, 0.2); }
+
+        /* DATA PANEL */
+        .data-panel {
+            flex: 1;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel-header { color: var(--accent-blue); font-weight: bold; border-bottom: 1px solid var(--grid-line); padding-bottom: 10px; margin-bottom: 10px; font-size: 0.9rem; text-transform: uppercase; }
+
+        .data-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid #334155;
+        }
+        .counter-label { font-size: 0.8rem; color: #94a3b8; }
+        .counter-val { font-family: monospace; font-size: 1.2rem; color: white; font-weight: bold; }
+        .counter-val.highlight { color: var(--accent-green); text-shadow: 0 0 10px var(--accent-green); }
+
+        .footer {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: var(--bg-panel);
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        button { padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; }
+        .btn-exec { background: var(--accent-green); color: black; }
+        .btn-stop { background: var(--accent-red); color: white; }
+        .btn-stop:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+        .btn-reset { background: #334155; color: white; }
+
+        input[type=number] { background: #0f172a; border: 1px solid #475569; color: white; padding: 5px; width: 60px; border-radius: 4px; text-align: center; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>GX WORKS3 SIMULATOR | FOR / NEXT INSTRUCTION</span>
+        </div>
+        <div>
+            <span style="font-size: 0.8rem; color: #94a3b8;">Program Flow Control</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="program-container">
+            <div class="rail left"></div>
+            
+            <div id="scan-cursor" class="scan-line"></div>
+            <div id="loop-bracket" class="loop-bracket"></div>
+
+            <div class="ladder-view">
+                
+                <div class="rung" id="rung-0">
+                    <div class="wire fixed"></div>
+                    <div class="wire active"></div> 
+                    <div class="instruction-block for" id="inst-for">
+                        <div id="for-led" class="status-bit"></div>
+                        <span>FOR <span id="disp-k">K5</span></span>
+                    </div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-1">
+                    <div class="wire fixed"></div>
+                    
+                    <div class="symbol active" id="sym-sm400">
+                        <div class="contact-label">SM400</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire active" id="wire-sm400"></div>
+
+                    <div class="instruction-block inc" id="inst-inc">
+                        INC D0
+                    </div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-2">
+                    <div class="wire fixed"></div>
+                    <div class="wire active"></div>
+                    <div class="instruction-block next" id="inst-next">
+                        NEXT
+                    </div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-3">
+                    <div class="wire fixed"></div>
+                    <div class="wire active"></div>
+                    <div class="instruction-block" style="border-color:#64748b; color:#64748b;">
+                        END
+                    </div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+            </div>
+            <div class="rail right"></div>
+        </div>
+
+        <div class="data-panel">
+            <div class="panel-header">Device Monitor</div>
+            
+            <div class="data-row">
+                <span class="counter-label">Current Index (n)</span>
+                <span id="val-index" class="counter-val" style="color:var(--accent-purple)">0</span>
+            </div>
+
+            <div class="data-row" style="border-color:var(--accent-green)">
+                <span class="counter-label">Register D0 Value</span>
+                <span id="val-d0" class="counter-val">0</span>
+            </div>
+
+            <div style="flex:1"></div>
+
+            <div class="panel-header">Settings</div>
+            <div class="data-row" style="background:transparent; border:none; padding:0;">
+                <span style="color:#94a3b8; font-size:0.9rem;">Loop Count (K):</span>
+                <input type="number" id="inp-count" value="5" min="1" max="255" onchange="updateSettings()">
+            </div>
+            
+            <div style="margin-top:20px; font-family:monospace; color:var(--accent-cyan); font-size:0.85rem;" id="status-msg">
+                SYSTEM READY
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:0.8rem; color:#94a3b8;">Simulation Speed:</span>
+            <input type="range" id="sim-speed" min="100" max="2000" value="1000">
+        </div>
+        <div>
+            <button class="btn-reset" onclick="resetSim()">RESET D0</button>
+            <button id="btn-run" class="btn-exec" onclick="runSimulation()">EXECUTE SCAN</button>
+            <button id="btn-stop" class="btn-stop" onclick="stopSimulation()" disabled>STOP</button>
+        </div>
+    </div>
+
+    <script>
+        // STATE
+        let isRunning = false;
+        let d0_val = 0;
+        let scanStep = 0;
+
+        // UI REFERENCES
+        const rungs = [
+            document.getElementById('rung-0'), 
+            document.getElementById('rung-1'), 
+            document.getElementById('rung-2'),
+            document.getElementById('rung-3')
+        ];
+        const blocks = [
+            document.getElementById('inst-for'), 
+            document.getElementById('inst-inc'), 
+            document.getElementById('inst-next')
+        ];
+        const cursor = document.getElementById('scan-cursor');
+        const bracket = document.getElementById('loop-bracket');
+        const status = document.getElementById('status-msg');
+        
+        const forLed = document.getElementById('for-led');
+        // NOTE: SM400 is initialized as active in HTML via class='active'
+        
+        const els = {
+            dispK: document.getElementById('disp-k'),
+            inpCount: document.getElementById('inp-count'),
+            valIndex: document.getElementById('val-index'),
+            valD0: document.getElementById('val-d0'),
+            btnRun: document.getElementById('btn-run'),
+            btnStop: document.getElementById('btn-stop'),
+            speed: document.getElementById('sim-speed')
+        };
+
+        // Align bracket visually based on element positions
+        function alignBracket() {
+            let top = rungs[0].offsetTop + (rungs[0].offsetHeight/2);
+            let bottom = rungs[2].offsetTop + (rungs[2].offsetHeight/2);
+            let height = bottom - top;
+            bracket.style.top = top + 'px';
+            bracket.style.height = height + 'px';
+        }
+        setTimeout(alignBracket, 100); 
+
+        function updateSettings() {
+            let n = parseInt(els.inpCount.value);
+            if (n > 255) { n = 255; els.inpCount.value = 255; }
+            if (isNaN(n) || n < 1) n = 1;
+            els.dispK.innerText = `K${n}`;
+        }
+
+        function resetSim() {
+            d0_val = 0;
+            els.valD0.innerText = "0";
+            els.valIndex.innerText = "0";
+            status.innerText = "MEMORY CLEARED";
+            cursor.style.display = "none";
+            rungs.forEach(r => r.classList.remove('scan-active'));
+            blocks.forEach(b => b.classList.remove('executing'));
+            bracket.classList.remove('active');
+            forLed.classList.remove('on');
+            
+            // NOTE: We DO NOT reset SM400 because it is "Always On"
+        }
+
+        function stopSimulation() {
+            isRunning = false;
+            status.innerText = "STOPPED BY USER";
+            forLed.classList.remove('on'); 
+        }
+
+        async function runSimulation() {
+            if(isRunning) return;
+            
+            const count = parseInt(els.inpCount.value);
+            
+            isRunning = true;
+            els.btnRun.disabled = true;
+            els.btnStop.disabled = false;
+            cursor.style.display = "block";
+            
+            // TURN ON FOR-BLOCK LED
+            forLed.classList.add('on');
+            
+            // Loop Logic
+            for(let i=0; i<count; i++) {
+                if(!isRunning) break;
+
+                // 1. FOR INSTRUCTION
+                if(i===0) {
+                    moveCursor(0);
+                    blocks[0].classList.add('executing');
+                    status.innerText = "STARTING LOOP...";
+                    await sleep(); if(!isRunning) break;
+                    blocks[0].classList.remove('executing');
+                }
+
+                bracket.classList.add('active'); 
+
+                // 2. INC D0
+                moveCursor(1);
+                blocks[1].classList.add('executing');
+                
+                d0_val++;
+                els.valD0.innerText = d0_val;
+                els.valD0.classList.add('highlight');
+                els.valIndex.innerText = i + 1;
+                status.innerText = `ITERATION ${i+1}/${count}: D0 INCREMENTED`;
+
+                await sleep(); if(!isRunning) break;
+                
+                els.valD0.classList.remove('highlight');
+                blocks[1].classList.remove('executing');
+
+                // 3. NEXT
+                moveCursor(2);
+                blocks[2].classList.add('executing');
+                
+                if(i < count - 1) {
+                    status.innerText = "LOOP CONDITION MET. JUMPING BACK.";
+                } else {
+                    status.innerText = "LOOP FINISHED. PROCEEDING.";
+                }
+
+                await sleep(); if(!isRunning) break;
+                blocks[2].classList.remove('executing');
+            }
+
+            if(isRunning) {
+                bracket.classList.remove('active');
+                moveCursor(3); // Go to END
+                status.innerText = "SCAN COMPLETE";
+                await new Promise(r => setTimeout(r, 500));
+                cursor.style.display = "none";
+                rungs.forEach(r => r.classList.remove('scan-active'));
+                
+                // Turn off FOR LED at end
+                forLed.classList.remove('on');
+            }
+
+            isRunning = false;
+            els.btnRun.disabled = false;
+            els.btnStop.disabled = true;
+        }
+
+        function moveCursor(idx) {
+            rungs.forEach(r => r.classList.remove('scan-active'));
+            if(idx < rungs.length) {
+                let r = rungs[idx];
+                r.classList.add('scan-active');
+                cursor.style.top = (r.offsetTop + r.offsetHeight/2 - 1) + "px";
+            }
+        }
+
+        function sleep() {
+            let ms = 2100 - parseInt(els.speed.value);
+            return new Promise(r => setTimeout(r, ms));
+        }
+
+        updateSettings();
+
+    </script>
+</body>
+</html>

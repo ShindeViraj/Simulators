@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - RORP/ROLP Visualizer</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --grid-line: #334155;
+            --wire-off: #475569;
+            --wire-on: #22c55e;
+            --glow: 0 0 10px #22c55e;
+            --accent-cyan: #06b6d4;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        /* HEADER */
+        .header {
+            width: 100%; max-width: 800px;
+            display: flex; justify-content: space-between; align-items: center;
+            background-color: var(--bg-panel);
+            padding: 15px 20px; border-radius: 8px; border: 1px solid var(--grid-line);
+            margin-bottom: 20px;
+        }
+        .title h1 { margin: 0; font-size: 1.2rem; color: white; letter-spacing: 1px; }
+        .title span { font-size: 0.8rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* MAIN CONTAINER */
+        .main-container {
+            display: flex; flex-direction: column; gap: 20px;
+            width: 100%; max-width: 800px;
+        }
+
+        /* REGISTER VIEW */
+        .register-panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        .bit-row {
+            display: flex; gap: 4px; margin-top: 10px;
+        }
+
+        .bit-cell {
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        /* UPDATED: Interactive Bit Box */
+        .bit-box {
+            width: 35px; height: 45px;
+            background-color: #0f172a;
+            border: 2px solid var(--wire-off);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 1.1rem; color: var(--wire-off);
+            transition: all 0.2s;
+            cursor: pointer; /* Indicates Clickable */
+        }
+        .bit-box:hover {
+            border-color: var(--text-muted); /* Hover effect */
+        }
+
+        .bit-box.on {
+            background-color: rgba(34, 197, 94, 0.2);
+            border-color: var(--wire-on);
+            color: var(--wire-on);
+            box-shadow: var(--glow);
+        }
+
+        .bit-idx { font-size: 0.6rem; color: var(--text-muted); margin-bottom: 4px; }
+
+        /* CARRY FLAG */
+        .carry-section {
+            margin-top: 20px;
+            display: flex; align-items: center; gap: 10px;
+            background: #0f172a; padding: 8px 15px; border-radius: 4px; border: 1px solid var(--grid-line);
+        }
+        .carry-box {
+            width: 30px; height: 30px; border-radius: 50%;
+            border: 2px solid var(--wire-off); background: #1e293b;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; color: var(--wire-off);
+        }
+        .carry-box.active {
+            background: var(--wire-on); border-color: white; color: black;
+            box-shadow: var(--glow);
+        }
+
+        /* LADDER CONTROLS */
+        .ladder-panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* Two columns for RORP/ROLP */
+            gap: 20px;
+        }
+
+        .rung-container {
+            display: flex; flex-direction: column; align-items: center;
+            background: #0f172a; border: 1px solid var(--grid-line);
+            padding: 20px; border-radius: 6px;
+            position: relative;
+        }
+
+        /* BUTTONS (Contacts) */
+        .push-btn {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            background: #1e293b;
+            border: 3px solid var(--wire-off);
+            color: var(--text-muted);
+            font-weight: bold; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: all 0.1s;
+            box-shadow: 0 4px 0 #0f172a;
+            user-select: none;
+        }
+        .push-btn:active { transform: translateY(4px); box-shadow: none; }
+        .push-btn.pressed {
+            border-color: var(--wire-on);
+            color: var(--wire-on);
+            background: rgba(34, 197, 94, 0.1);
+            box-shadow: inset 0 0 15px rgba(34, 197, 94, 0.3);
+        }
+
+        .inst-label {
+            margin-top: 15px; font-family: monospace; font-size: 1.1rem; color: white;
+            border: 1px solid var(--wire-off); padding: 5px 15px; border-radius: 4px;
+        }
+        .inst-label.active { border-color: var(--accent-cyan); color: var(--accent-cyan); box-shadow: 0 0 10px var(--accent-cyan); }
+
+        .arrow { font-size: 1.5rem; color: var(--text-muted); margin-bottom: 10px; }
+
+        /* DATA EDIT */
+        .edit-row {
+            display: flex; justify-content: center; align-items: center; gap: 10px;
+            margin-top: 20px;
+        }
+        input { background: #0f172a; border: 1px solid var(--grid-line); color: white; padding: 8px; border-radius: 4px; width: 100px; text-align: center; }
+        button.reset { background: #475569; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+        button.reset:hover { background: #64748b; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>INSTRUCTION VISUALIZER | ROTATE PULSE</span>
+        </div>
+    </div>
+
+    <div class="main-container">
+        
+        <div class="register-panel">
+            <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:10px;">DATA REGISTER (D0) - CLICK BITS TO TOGGLE</div>
+            
+            <div class="bit-row" id="bit-grid">
+                </div>
+
+            <div class="carry-section">
+                <span>CARRY FLAG (SM700):</span>
+                <div id="carry-box" class="carry-box">0</div>
+                <span style="font-size:0.7rem; color:#64748b; margin-left:10px;">(Captures the bit shifted out)</span>
+            </div>
+
+            <div class="edit-row">
+                <span style="font-size:0.8rem; color:#94a3b8;">Value (Dec):</span>
+                <input type="number" id="inp-val" value="1" onchange="loadValue()">
+                <button class="reset" onclick="loadValue()">LOAD</button>
+                <button class="reset" onclick="preset()" style="background:var(--accent-cyan); color:black;">RESET TO ZERO</button>
+            </div>
+        </div>
+
+        <div class="ladder-panel">
+            
+            <div class="rung-container">
+                <div class="arrow">← ROTATE LEFT</div>
+                <div id="btn-rol" class="push-btn" onmousedown="triggerInstruction('ROL')" onmouseup="releaseBtn('rol')" onmouseleave="releaseBtn('rol')" ontouchstart="triggerInstruction('ROL')" ontouchend="releaseBtn('rol')">
+                    X0<br><span style="font-size:0.6rem">PUSH</span>
+                </div>
+                <div id="lbl-rol" class="inst-label">ROLP D0 K1</div>
+            </div>
+
+            <div class="rung-container">
+                <div class="arrow">ROTATE RIGHT →</div>
+                <div id="btn-ror" class="push-btn" onmousedown="triggerInstruction('ROR')" onmouseup="releaseBtn('ror')" onmouseleave="releaseBtn('ror')" ontouchstart="triggerInstruction('ROR')" ontouchend="releaseBtn('ror')">
+                    X1<br><span style="font-size:0.6rem">PUSH</span>
+                </div>
+                <div id="lbl-ror" class="inst-label">RORP D0 K1</div>
+            </div>
+
+        </div>
+
+        <div style="text-align:center; font-size:0.8rem; color:#64748b;">
+            Note: "P" suffix (Pulse) means rotation happens once per button press (Rising Edge).
+        </div>
+
+    </div>
+
+    <script>
+        // --- STATE ---
+        let d0_value = 1; // Initial value (Bit 0 ON)
+        let carry_val = 0; // Carry Flag
+
+        // --- INIT ---
+        const grid = document.getElementById('bit-grid');
+        
+        function initGrid() {
+            grid.innerHTML = '';
+            for(let i=15; i>=0; i--) {
+                let cell = document.createElement('div');
+                cell.className = 'bit-cell';
+                
+                let idx = document.createElement('div');
+                idx.className = 'bit-idx';
+                idx.innerText = i;
+                
+                let box = document.createElement('div');
+                box.className = 'bit-box';
+                box.id = `bit-${i}`;
+                box.innerText = '0';
+                
+                // ADDED: Click Event to Toggle Bits
+                box.onclick = () => toggleBit(i);
+
+                cell.appendChild(idx);
+                cell.appendChild(box);
+                grid.appendChild(cell);
+            }
+            updateDisplay();
+        }
+
+        // --- BIT INTERACTION ---
+        function toggleBit(index) {
+            // Toggle the bit at 'index' using XOR
+            d0_value = d0_value ^ (1 << index);
+            updateDisplay();
+        }
+
+        // --- LOGIC ENGINE ---
+        function triggerInstruction(type) {
+            // Visual Button Press
+            if(type === 'ROL') {
+                document.getElementById('btn-rol').classList.add('pressed');
+                document.getElementById('lbl-rol').classList.add('active');
+                
+                // ROLP LOGIC
+                // 1. Get MSB (Bit 15) - this will wrap to Bit 0 AND go to Carry
+                let msb = (d0_value & 0x8000) >>> 15;
+                carry_val = msb;
+                
+                // 2. Shift Left 1
+                d0_value = (d0_value << 1) & 0xFFFF; // Mask to 16 bits
+                
+                // 3. Wrap MSB to LSB
+                d0_value = d0_value | msb;
+
+            } else {
+                document.getElementById('btn-ror').classList.add('pressed');
+                document.getElementById('lbl-ror').classList.add('active');
+
+                // RORP LOGIC
+                // 1. Get LSB (Bit 0) - this will wrap to Bit 15 AND go to Carry
+                let lsb = d0_value & 1;
+                carry_val = lsb;
+
+                // 2. Shift Right 1
+                d0_value = d0_value >>> 1;
+
+                // 3. Wrap LSB to MSB
+                d0_value = d0_value | (lsb << 15);
+            }
+
+            updateDisplay();
+        }
+
+        function releaseBtn(id) {
+            document.getElementById(`btn-${id}`).classList.remove('pressed');
+            document.getElementById(`lbl-${id}`).classList.remove('active');
+        }
+
+        // --- DISPLAY UPDATES ---
+        function updateDisplay() {
+            // Update Bits
+            for(let i=0; i<16; i++) {
+                let bit = (d0_value >> i) & 1;
+                let el = document.getElementById(`bit-${i}`);
+                el.innerText = bit;
+                if(bit === 1) el.classList.add('on');
+                else el.classList.remove('on');
+            }
+
+            // Update Carry
+            let cBox = document.getElementById('carry-box');
+            cBox.innerText = carry_val;
+            if(carry_val === 1) cBox.classList.add('active');
+            else cBox.classList.remove('active');
+
+            // Update Input Field
+            document.getElementById('inp-val').value = d0_value;
+        }
+
+        // --- UTILS ---
+        function loadValue() {
+            let v = parseInt(document.getElementById('inp-val').value);
+            if(!isNaN(v)) {
+                d0_value = v & 0xFFFF; // Ensure 16 bit limit
+                updateDisplay();
+            }
+        }
+
+        function preset() {
+            // UPDATED: Sets to Zero
+            d0_value = 0; 
+            updateDisplay();
+        }
+
+        // Start
+        initGrid();
+
+    </script>
+</body>
+</html>

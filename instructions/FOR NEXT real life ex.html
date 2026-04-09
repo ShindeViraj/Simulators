@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - Parallel Branch Logic</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-line: #334155;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 1px; color: white; text-transform: uppercase; }
+        .title span { font-size: 0.75rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* MAIN STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 15px;
+            min-height: 0; /* Critical for scrolling */
+            position: relative;
+        }
+
+        /* LADDER CANVAS */
+        .program-container {
+            flex: 1.8;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ladder-view {
+            padding: 20px 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px; 
+            position: relative;
+        }
+
+        /* Rails */
+        .rail { position: absolute; width: 4px; background: #475569; top: 0; bottom: 0; z-index: 1; }
+        .rail.left { left: 15px; }
+        .rail.right { right: 15px; }
+
+        /* Rungs */
+        .rung {
+            display: flex;
+            align-items: center;
+            min-height: 50px;
+            position: relative;
+            padding-left: 10px;
+            transition: background 0.1s;
+        }
+        .rung.scan-active { background: rgba(6, 182, 212, 0.05); }
+
+        /* Parallel Branching Layout */
+        .rung-content { display: flex; align-items: center; width: 100%; }
+        .branch-container { display: flex; flex-direction: column; position: relative; margin-left: 0; }
+        .branch-row { display: flex; align-items: center; height: 50px; }
+        
+        /* Vertical Line for Branch */
+        .v-line {
+            position: absolute; left: 0; top: 25px; bottom: 25px;
+            width: 2px; background-color: #64748b;
+        }
+        .v-line.active { background-color: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+
+        /* Wires */
+        .wire { height: 2px; background: #64748b; flex-grow: 1; transition: background 0.1s; min-width: 20px; }
+        .wire.active { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .wire.fixed { flex-grow: 0; width: 30px; }
+
+        /* CONTACT SYMBOL */
+        .symbol {
+            width: 40px; height: 40px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; margin: 0 5px; cursor: pointer;
+        }
+        .contact-draw { width: 100%; height: 50%; border-left: 2px solid #94a3b8; border-right: 2px solid #94a3b8; position: relative; }
+        .symbol.active .contact-draw { border-color: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); }
+        .contact-label { position: absolute; top: -8px; font-size: 0.75rem; color: var(--accent-cyan); white-space: nowrap; font-weight: bold; }
+
+        /* Instructions */
+        .instruction-block {
+            border: 1px solid #94a3b8; color: white; padding: 6px 12px; font-family: monospace; font-weight: bold; font-size: 0.9rem;
+            min-width: 130px; text-align: center; background: var(--bg-dark); position: relative; z-index: 2;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        
+        .instruction-block.for { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .instruction-block.next { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .instruction-block.inc { border-color: var(--accent-green); color: var(--accent-green); }
+        .instruction-block.set { border-color: var(--accent-amber); color: var(--accent-amber); }
+        .instruction-block.rst { border-color: var(--accent-red); color: var(--accent-red); }
+
+        .instruction-block.executing { background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 15px currentColor; }
+
+        /* Scan Cursor */
+        .scan-line {
+            position: absolute; left: 0; right: 0; height: 3px; background: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan); z-index: 10; pointer-events: none;
+            transition: top 0.1s linear; display: none; 
+        }
+
+        /* RIGHT: MONITORING */
+        .data-panel {
+            flex: 1.2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto; /* ENABLE SCROLLING */
+        }
+
+        .panel-header { color: var(--accent-blue); font-weight: bold; border-bottom: 1px solid var(--grid-line); padding-bottom: 5px; margin-bottom: 5px; font-size: 0.85rem; text-transform: uppercase; }
+
+        /* BIT GRID */
+        .bit-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .bit-cell {
+            aspect-ratio: 1;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 2px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; color: #64748b;
+            transition: all 0.2s;
+        }
+        .bit-cell.on {
+            background: var(--accent-green);
+            color: black;
+            font-weight: bold;
+            box-shadow: 0 0 5px var(--accent-green);
+            border-color: #fff;
+        }
+
+        .switch-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0f172a; padding: 8px; border-radius: 4px; border: 1px solid #334155; cursor: pointer;
+        }
+        .switch-row.active { background: rgba(59, 130, 246, 0.1); border-color: var(--accent-blue); }
+        .switch-indicator { width: 30px; height: 16px; background: #334155; border-radius: 10px; position: relative; transition: 0.3s; }
+        .switch-row.active .switch-indicator { background: var(--accent-green); }
+        .switch-indicator::after { content:''; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; background: white; border-radius: 50%; transition: 0.3s; }
+        .switch-row.active .switch-indicator::after { left: 16px; }
+
+        .data-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0f172a; padding: 10px; border-radius: 4px; border: 1px solid #334155;
+        }
+        .val-display { font-family: monospace; font-weight: bold; font-size: 1.1rem; color: var(--accent-purple); }
+
+        .explanation-box {
+            font-size: 0.75rem; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border-left: 3px solid var(--accent-amber);
+            line-height: 1.4; margin-top: auto; 
+        }
+
+        .footer {
+            margin-top: 10px; padding: 10px; background-color: var(--bg-panel); border-radius: 8px; border: 1px solid var(--grid-line);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+
+        button { padding: 8px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; font-size: 0.85rem; }
+        .btn-exec { background: var(--accent-green); color: black; }
+        .btn-stop { background: var(--accent-red); color: white; }
+        .btn-stop:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+        .btn-reset { background: #334155; color: white; }
+
+        input[type=number] { background: #0f172a; border: 1px solid #475569; color: white; padding: 4px; width: 50px; border-radius: 4px; text-align: center; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>GX WORKS3 SIMULATOR | PARALLEL BRANCH LOGIC</span>
+        </div>
+        <div>
+            <span style="font-size: 0.8rem; color: #94a3b8;">Z0 Indirect Addressing</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="program-container">
+            <div class="rail left"></div>
+            
+            <div id="scan-cursor" class="scan-line"></div>
+
+            <div class="ladder-view">
+                
+                <div class="rung" id="rung-0">
+                    <div class="wire fixed"></div>
+                    <div class="symbol" id="sym-m0">
+                        <div class="contact-label">M0</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="wire-m0"></div>
+                    <div class="instruction-block rst" id="inst-rst-z0">RST Z0</div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-1">
+                    <div class="wire fixed"></div>
+                    <div class="wire active"></div> 
+                    <div class="instruction-block for" id="inst-for">
+                        FOR <span id="disp-k">K50</span>
+                    </div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-2" style="height:auto; align-items: stretch;">
+                    <div class="rung-content">
+                        <div class="wire fixed"></div>
+                        <div class="symbol" id="sym-m8">
+                            <div class="contact-label">M8</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="wire-m8" style="width:20px; flex-grow:0;"></div>
+                        
+                        <div class="branch-container" style="flex-grow:1;">
+                            <div class="branch-row">
+                                <div class="wire" id="w-b1"></div>
+                                <div class="instruction-block set" id="inst-set">SET M100Z0</div>
+                                <div class="wire fixed active"></div>
+                            </div>
+                            <div class="branch-row">
+                                <div class="wire" id="w-b2"></div>
+                                <div class="instruction-block inc" id="inst-inc">INC Z0</div>
+                                <div class="wire fixed active"></div>
+                            </div>
+                            <div class="v-line" id="v-line-m8"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rung" id="rung-3" style="height:auto; align-items: stretch;">
+                    <div class="rung-content">
+                        <div class="wire fixed"></div>
+                        <div class="symbol" id="sym-m9">
+                            <div class="contact-label">M9</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="wire-m9" style="width:20px; flex-grow:0;"></div>
+                        
+                        <div class="branch-container" style="flex-grow:1;">
+                            <div class="branch-row">
+                                <div class="wire" id="w-b3"></div>
+                                <div class="instruction-block rst" id="inst-rst">RST M100Z0</div>
+                                <div class="wire fixed active"></div>
+                            </div>
+                            <div class="branch-row">
+                                <div class="wire" id="w-b4"></div>
+                                <div class="instruction-block inc" id="inst-inc-2">INC Z0</div>
+                                <div class="wire fixed active"></div>
+                            </div>
+                            <div class="v-line" id="v-line-m9"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rung" id="rung-4">
+                    <div class="wire fixed"></div>
+                    <div class="wire active"></div>
+                    <div class="instruction-block next" id="inst-next">NEXT</div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+            </div>
+            <div class="rail right"></div>
+        </div>
+
+        <div class="data-panel">
+            <div class="panel-header">Memory Bits (M100 - M149)</div>
+            <div class="bit-grid" id="bit-grid"></div>
+
+            <div class="panel-header">Controls</div>
+            <div class="switch-row" id="sw-m0" onclick="toggleInput('m0')">
+                <span style="font-size:0.85rem; color:#fff;">M0 (Manual Reset Z0)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-m8" onclick="toggleInput('m8')">
+                <span style="font-size:0.85rem; color:#fff;">M8 (Enable SET & INC)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-m9" onclick="toggleInput('m9')">
+                <span style="font-size:0.85rem; color:#fff;">M9 (Enable RESET & INC)</span>
+                <div class="switch-indicator"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:10px;">Monitor & Settings</div>
+            
+            <div class="data-row">
+                <span style="color:#94a3b8; font-size:0.85rem;">Index Register (Z0)</span>
+                <span id="val-z0" class="val-display">0</span>
+            </div>
+
+            <div class="data-row">
+                <span style="color:#94a3b8; font-size:0.85rem;">Current Iteration</span>
+                <span id="val-iter" class="val-display" style="color:var(--accent-blue)">0</span>
+            </div>
+
+            <div class="data-row">
+                <span style="color:#94a3b8; font-size:0.85rem;">Loop Count (K)</span>
+                <input type="number" id="inp-count" value="50" min="1" max="255" onchange="updateSettings()">
+            </div>
+
+            <div class="explanation-box">
+                <strong>Logic Flow:</strong> 
+                <br>• <strong>M8 ON</strong>: Sets bit at (100+Z0) AND increments Z0.
+                <br>• <strong>M9 ON</strong>: Resets bit at (100+Z0) AND increments Z0.
+                <br>• Z0 must be manually reset using M0.
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:0.8rem; color:#94a3b8;">Speed:</span>
+            <input type="range" id="sim-speed" min="100" max="2000" value="800">
+        </div>
+        <div>
+            <button class="btn-reset" onclick="resetSim()">RESET</button>
+            <button id="btn-run" class="btn-exec" onclick="runSimulation()">EXECUTE SCAN</button>
+            <button id="btn-stop" class="btn-stop" onclick="stopSimulation()" disabled>STOP</button>
+        </div>
+    </div>
+
+    <script>
+        // STATE
+        let isRunning = false;
+        let z0_val = 0;
+        let inputs = { m0: false, m8: false, m9: false };
+        let memory = new Array(500).fill(0); 
+
+        // UI REFERENCES
+        const rungs = [
+            document.getElementById('rung-0'), 
+            document.getElementById('rung-1'), 
+            document.getElementById('rung-2'), 
+            document.getElementById('rung-3'), 
+            document.getElementById('rung-4')
+        ];
+        
+        // Block Groups
+        // Index 2 is M8 group, Index 3 is M9 group
+        const blocks = [
+            document.getElementById('inst-rst-z0'),
+            document.getElementById('inst-for'),
+            [document.getElementById('inst-set'), document.getElementById('inst-inc')],
+            [document.getElementById('inst-rst'), document.getElementById('inst-inc-2')], 
+            document.getElementById('inst-next')
+        ];
+        const cursor = document.getElementById('scan-cursor');
+        
+        // Wire Elements
+        const els = {
+            swM0: document.getElementById('sw-m0'),
+            swM8: document.getElementById('sw-m8'),
+            swM9: document.getElementById('sw-m9'),
+            
+            symM0: document.getElementById('sym-m0'), wireM0: document.getElementById('wire-m0'),
+            symM8: document.getElementById('sym-m8'), wireM8: document.getElementById('wire-m8'),
+            symM9: document.getElementById('sym-m9'), wireM9: document.getElementById('wire-m9'),
+            
+            // Branch M8
+            wB1: document.getElementById('w-b1'), wB2: document.getElementById('w-b2'), vLineM8: document.getElementById('v-line-m8'),
+            // Branch M9
+            wB3: document.getElementById('w-b3'), wB4: document.getElementById('w-b4'), vLineM9: document.getElementById('v-line-m9'),
+
+            bitGrid: document.getElementById('bit-grid'),
+            valZ0: document.getElementById('val-z0'),
+            valIter: document.getElementById('val-iter'),
+            dispK: document.getElementById('disp-k'),
+            inpCount: document.getElementById('inp-count'),
+            btnRun: document.getElementById('btn-run'),
+            btnStop: document.getElementById('btn-stop'),
+            speed: document.getElementById('sim-speed')
+        };
+
+        // Init Grid
+        function initGrid() {
+            els.bitGrid.innerHTML = '';
+            for(let i=0; i<50; i++) {
+                let d = document.createElement('div');
+                d.className = 'bit-cell';
+                d.id = `bit-${100+i}`;
+                d.innerText = 100+i;
+                els.bitGrid.appendChild(d);
+            }
+        }
+        initGrid();
+
+        function toggleInput(key) {
+            inputs[key] = !inputs[key];
+            if(key === 'm0') {
+                els.swM0.classList.toggle('active', inputs.m0);
+                if(inputs.m0) { els.symM0.classList.add('active'); els.wireM0.classList.add('active'); }
+                else { els.symM0.classList.remove('active'); els.wireM0.classList.remove('active'); }
+            }
+            if(key === 'm8') {
+                els.swM8.classList.toggle('active', inputs.m8);
+                if(inputs.m8) { 
+                    els.symM8.classList.add('active'); els.wireM8.classList.add('active'); 
+                    els.wB1.classList.add('active'); els.wB2.classList.add('active'); els.vLineM8.classList.add('active');
+                } else { 
+                    els.symM8.classList.remove('active'); els.wireM8.classList.remove('active');
+                    els.wB1.classList.remove('active'); els.wB2.classList.remove('active'); els.vLineM8.classList.remove('active');
+                }
+            }
+            if(key === 'm9') {
+                els.swM9.classList.toggle('active', inputs.m9);
+                if(inputs.m9) { 
+                    els.symM9.classList.add('active'); els.wireM9.classList.add('active');
+                    els.wB3.classList.add('active'); els.wB4.classList.add('active'); els.vLineM9.classList.add('active');
+                } else { 
+                    els.symM9.classList.remove('active'); els.wireM9.classList.remove('active');
+                    els.wB3.classList.remove('active'); els.wB4.classList.remove('active'); els.vLineM9.classList.remove('active');
+                }
+            }
+        }
+
+        function updateSettings() {
+            let n = parseInt(els.inpCount.value);
+            if (n > 255) { n = 255; els.inpCount.value = 255; }
+            if (isNaN(n) || n < 1) n = 1;
+            els.dispK.innerText = `K${n}`;
+        }
+
+        function resetSim() {
+            memory.fill(0);
+            z0_val = 0;
+            els.valZ0.innerText = "0";
+            els.valIter.innerText = "0";
+            cursor.style.display = "none";
+            rungs.forEach(r => r.classList.remove('scan-active'));
+            // Helper to clear nested arrays
+            const flatten = (ary) => ary.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), []);
+            flatten(blocks).forEach(b => b.classList.remove('executing'));
+            updateGridUI();
+        }
+
+        function stopSimulation() {
+            isRunning = false;
+        }
+
+        async function runSimulation() {
+            if(isRunning) return;
+            
+            const count = parseInt(els.inpCount.value); 
+            isRunning = true;
+            els.btnRun.disabled = true;
+            els.btnStop.disabled = false;
+            cursor.style.display = "block";
+            
+            // 0. RST Z0 (Manual)
+            moveCursor(0);
+            if(inputs.m0) {
+                blocks[0].classList.add('executing');
+                z0_val = 0;
+                els.valZ0.innerText = 0;
+            }
+            await sleep(); if(!isRunning) return;
+            blocks[0].classList.remove('executing');
+            
+            // Loop Logic
+            for(let i=0; i<count; i++) {
+                if(!isRunning) break;
+
+                els.valIter.innerText = i + 1;
+
+                // 1. FOR
+                if(i===0) {
+                    moveCursor(1);
+                    blocks[1].classList.add('executing');
+                    await sleep(); if(!isRunning) break;
+                    blocks[1].classList.remove('executing');
+                }
+
+                // 2. PARALLEL BRANCH (M8 -> SET & INC)
+                moveCursor(2);
+                if(inputs.m8) {
+                    blocks[2][0].classList.add('executing'); // SET
+                    blocks[2][1].classList.add('executing'); // INC
+                    
+                    if((100 + z0_val) < 500) { 
+                        memory[100 + z0_val] = 1;
+                        let cell = document.getElementById(`bit-${100+z0_val}`);
+                        if(cell) cell.classList.add('on');
+                    }
+                    
+                    z0_val++;
+                    els.valZ0.innerText = z0_val;
+                }
+                
+                await sleep(); if(!isRunning) break;
+                blocks[2][0].classList.remove('executing');
+                blocks[2][1].classList.remove('executing');
+
+                // 3. PARALLEL BRANCH (M9 -> RST & INC)
+                moveCursor(3);
+                if(inputs.m9) {
+                    blocks[3][0].classList.add('executing'); // RST
+                    blocks[3][1].classList.add('executing'); // INC
+                    
+                    if((100 + z0_val) < 500) {
+                        memory[100 + z0_val] = 0;
+                        let cell = document.getElementById(`bit-${100+z0_val}`);
+                        if(cell) cell.classList.remove('on');
+                    }
+
+                    z0_val++; // Increment here too!
+                    els.valZ0.innerText = z0_val;
+                }
+                await sleep(); if(!isRunning) break;
+                blocks[3][0].classList.remove('executing');
+                blocks[3][1].classList.remove('executing');
+
+                // 4. NEXT
+                moveCursor(4);
+                blocks[4].classList.add('executing');
+                await sleep(); if(!isRunning) break;
+                blocks[4].classList.remove('executing');
+            }
+
+            // Finish
+            if(isRunning) {
+                await new Promise(r => setTimeout(r, 500));
+                cursor.style.display = "none";
+                rungs.forEach(r => r.classList.remove('scan-active'));
+            }
+
+            isRunning = false;
+            els.btnRun.disabled = false;
+            els.btnStop.disabled = true;
+        }
+
+        function updateGridUI() {
+            for(let i=0; i<50; i++) {
+                let el = document.getElementById(`bit-${100+i}`);
+                if(el) {
+                    if(memory[100+i] === 1) el.classList.add('on');
+                    else el.classList.remove('on');
+                }
+            }
+        }
+
+        function moveCursor(idx) {
+            rungs.forEach(r => r.classList.remove('scan-active'));
+            if(idx < rungs.length) {
+                let r = rungs[idx];
+                r.classList.add('scan-active');
+                cursor.style.top = (r.offsetTop + r.offsetHeight/2 - 1) + "px";
+            }
+        }
+
+        function sleep() {
+            let ms = 2100 - parseInt(els.speed.value);
+            return new Promise(r => setTimeout(r, ms));
+        }
+
+    </script>
+</body>
+</html>

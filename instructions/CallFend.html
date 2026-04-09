@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - CALL/SRET Visualizer</title>
+    <style>
+        /* --- SQUAREWAVE THEME --- */
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-line: #334155;
+            --scan-color: rgba(6, 182, 212, 0.3); /* Cyan Glow */
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 15px 25px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.2rem; letter-spacing: 1px; color: white; text-transform: uppercase; }
+        .title span { font-size: 0.8rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* MAIN STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            min-height: 0;
+            position: relative;
+        }
+
+        /* PROGRAM AREA (LADDER) */
+        .program-container {
+            flex: 3;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ladder-view {
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            position: relative;
+        }
+
+        /* Rails */
+        .rail { position: absolute; width: 4px; background: #475569; top: 0; bottom: 0; z-index: 1; }
+        .rail.left { left: 20px; }
+        .rail.right { right: 20px; }
+
+        /* Rung Styles */
+        .rung {
+            display: flex;
+            align-items: center;
+            height: 60px;
+            position: relative;
+            padding-left: 10px;
+            transition: opacity 0.3s;
+        }
+
+        /* Differentiating Sections */
+        .section-label {
+            font-size: 0.7rem; color: var(--accent-amber); font-weight: bold;
+            margin-top: 10px; margin-bottom: -5px; padding-left: 45px;
+        }
+        
+        .subroutine-zone {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px dashed #475569;
+            border-radius: 6px;
+            padding: 10px 0;
+            margin-top: 10px;
+            opacity: 0.4; /* Dimmed by default */
+            transition: opacity 0.3s;
+        }
+        .subroutine-zone.active-zone { opacity: 1; border-color: var(--accent-purple); background: rgba(168, 85, 247, 0.05); }
+
+        /* Ladder Elements */
+        .wire { height: 2px; background: #64748b; flex-grow: 1; transition: background 0.1s; }
+        .wire.active { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .wire.fixed { flex-grow: 0; width: 30px; }
+
+        .symbol {
+            width: 40px; height: 30px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; cursor: pointer;
+        }
+        
+        /* Contacts */
+        .contact-draw { width: 100%; height: 100%; border-left: 2px solid #94a3b8; border-right: 2px solid #94a3b8; position: relative; }
+        .contact.active .contact-draw { border-color: var(--accent-green); }
+        .contact-label { position: absolute; top: -15px; font-size: 0.7rem; color: var(--accent-cyan); white-space: nowrap; }
+
+        /* Coils */
+        .coil-draw { width: 30px; height: 30px; border: 2px solid #94a3b8; border-radius: 50%; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-weight:bold; font-size:0.8rem; }
+        .coil.active .coil-draw { border-color: var(--accent-green); background: rgba(34, 197, 94, 0.2); color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
+
+        /* Instructions */
+        .instruction {
+            border: 1px solid #94a3b8; color: white; padding: 5px 15px; font-family: monospace; font-weight: bold; font-size: 0.9rem;
+            min-width: 80px; text-align: center;
+        }
+        .instruction.call { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .instruction.fend { border-color: var(--accent-red); color: var(--accent-red); width: 100%; }
+        .instruction.sret { border-color: var(--accent-purple); color: var(--accent-purple); }
+
+        /* SCAN CURSOR */
+        .scan-line {
+            position: absolute; left: 0; right: 0; height: 4px;
+            background: var(--accent-cyan);
+            box-shadow: 0 0 15px var(--accent-cyan);
+            z-index: 10;
+            pointer-events: none;
+            transition: top 0.1s linear; /* Smooth movement */
+        }
+
+        /* RIGHT PANEL (CONTROLS & STATUS) */
+        .control-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel-box {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .panel-title { color: var(--accent-blue); font-weight: bold; border-bottom: 1px solid var(--grid-line); padding-bottom: 8px; margin-bottom: 15px; font-size: 0.9rem; }
+
+        .io-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: #0f172a; padding: 8px; border-radius: 4px; border: 1px solid #334155; }
+        .switch { width: 40px; height: 20px; background: #334155; border-radius: 10px; position: relative; cursor: pointer; }
+        .switch::after { content:''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: 0.2s; }
+        .switch.on { background: var(--accent-green); }
+        .switch.on::after { left: 22px; }
+
+        .led { width: 16px; height: 16px; border-radius: 50%; background: #334155; border: 2px solid #475569; transition: 0.2s; }
+        .led.on { background: var(--accent-green); border-color: white; box-shadow: 0 0 10px var(--accent-green); }
+
+        .btn-stop { width: 100%; padding: 12px; background: var(--accent-red); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-stop:hover { background: #dc2626; }
+        .btn-run { width: 100%; padding: 12px; background: var(--accent-green); color: black; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background: #334155; color: #94a3b8; }
+        .status-badge.active { background: var(--accent-purple); color: white; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>GX WORKS3 SIMULATOR | CALL & SRET INSTRUCTION FLOW</span>
+        </div>
+        <div>
+            <span style="font-size: 0.8rem; color: #94a3b8;">Program Flow Control</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="program-container">
+            <div class="rail left"></div>
+            
+            <div id="scan-cursor" class="scan-line" style="top: 50px; opacity: 0;"></div>
+
+            <div class="ladder-view" id="ladder-content">
+                
+                <div class="section-label">MAIN PROGRAM</div>
+
+                <div class="rung" id="rung-0">
+                    <div class="wire fixed"></div>
+                    <div class="symbol contact" id="sym-x1" onclick="toggleX(1)">
+                        <div class="contact-label">X1 (Main)</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-0-mid"></div>
+                    <div class="symbol coil" id="sym-y0">
+                        <div class="contact-label">Y0</div>
+                        <div class="coil-draw">Y0</div>
+                    </div>
+                    <div class="wire fixed" id="w-0-end"></div>
+                </div>
+
+                <div class="rung" id="rung-1">
+                    <div class="wire fixed"></div>
+                    <div class="symbol contact" id="sym-x0" onclick="toggleX(0)">
+                        <div class="contact-label" style="color:var(--accent-amber)">X0 (CALL)</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-1-mid"></div>
+                    <div class="instruction call" id="inst-call">CALL P0</div>
+                    <div class="wire fixed" id="w-1-end"></div>
+                </div>
+
+                <div class="rung" id="rung-2">
+                    <div class="wire fixed"></div>
+                    <div class="wire"></div>
+                    <div class="instruction fend">FEND (End of Main)</div>
+                    <div class="wire fixed"></div>
+                </div>
+
+                <div id="sub-zone" class="subroutine-zone">
+                    <div class="section-label" style="padding-left:10px; color:var(--accent-purple)">POINTER P0 (SUBROUTINE)</div>
+                    
+                    <div class="rung" id="rung-3" style="margin-top:10px;">
+                        <div class="wire fixed"></div>
+                        <div class="symbol contact" id="sym-x2" onclick="toggleX(2)">
+                            <div class="contact-label">X2 (Sub)</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="w-3-mid"></div>
+                        <div class="symbol coil" id="sym-y1">
+                            <div class="contact-label">Y1</div>
+                            <div class="coil-draw">Y1</div>
+                        </div>
+                        <div class="wire fixed" id="w-3-end"></div>
+                    </div>
+
+                    <div class="rung" id="rung-4">
+                        <div class="wire fixed"></div>
+                        <div class="wire"></div>
+                        <div class="instruction sret">SRET (Return)</div>
+                        <div class="wire fixed"></div>
+                    </div>
+                </div>
+
+                <div class="section-label" style="text-align:right; padding-right:20px;">END OF PROGRAM</div>
+
+            </div>
+            <div class="rail right"></div>
+        </div>
+
+        <div class="control-panel">
+            
+            <div class="panel-box">
+                <div class="panel-title">INPUT SWITCHES</div>
+                <div class="io-row">
+                    <span>X0 (Enable CALL)</span>
+                    <div class="switch" id="sw-x0" onclick="toggleX(0)"></div>
+                </div>
+                <div class="io-row">
+                    <span>X1 (Main Logic)</span>
+                    <div class="switch" id="sw-x1" onclick="toggleX(1)"></div>
+                </div>
+                <div class="io-row">
+                    <span>X2 (Sub Logic)</span>
+                    <div class="switch" id="sw-x2" onclick="toggleX(2)"></div>
+                </div>
+            </div>
+
+            <div class="panel-box">
+                <div class="panel-title">OUTPUT STATUS</div>
+                <div class="io-row">
+                    <span>Y0 (Main Out)</span>
+                    <div class="led" id="led-y0"></div>
+                </div>
+                <div class="io-row">
+                    <span>Y1 (Sub Out)</span>
+                    <div class="led" id="led-y1"></div>
+                </div>
+                <div style="margin-top:10px; font-size:0.8rem; color:#94a3b8; border-top:1px solid #334155; padding-top:10px;">
+                    STATUS: <span id="flow-status" class="status-badge">MAIN LOOP</span>
+                </div>
+            </div>
+
+            <div class="panel-box">
+                <div class="panel-title">SIMULATION CONTROL</div>
+                <label style="font-size:0.8rem; color:#94a3b8;">Scan Speed:</label>
+                <input type="range" id="speed-slider" min="100" max="2000" value="1000" style="width:100%">
+                
+                <button class="btn-stop" id="btn-stop" onclick="stopSim()">STOP EXECUTION</button>
+                <button class="btn-run" id="btn-run" onclick="startSim()" disabled style="background:#334155; color:#94a3b8;">RUNNING...</button>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // STATE
+        let inputs = { x0: false, x1: false, x2: false };
+        let outputs = { y0: false, y1: false };
+        let isRunning = true;
+        let scanStep = 0;
+        let loopTimeout = null;
+
+        // UI ELEMENTS
+        const rungs = [
+            document.getElementById('rung-0'), // Main
+            document.getElementById('rung-1'), // Call
+            document.getElementById('rung-2'), // Fend
+            document.getElementById('rung-3'), // Sub Logic
+            document.getElementById('rung-4')  // Sret
+        ];
+        const cursor = document.getElementById('scan-cursor');
+        const subZone = document.getElementById('sub-zone');
+        const statusBadge = document.getElementById('flow-status');
+
+        // --- TOGGLE INPUTS ---
+        function toggleX(idx) {
+            let key = 'x' + idx;
+            inputs[key] = !inputs[key];
+            
+            // Update UI Switches
+            document.getElementById('sw-x' + idx).classList.toggle('on', inputs[key]);
+            
+            // Update Ladder Contacts
+            let contact = document.getElementById('sym-x' + idx);
+            if(inputs[key]) contact.classList.add('active');
+            else contact.classList.remove('active');
+
+            // Force immediate logic update for responsiveness
+            evaluateLogic();
+        }
+
+        // --- LOGIC ENGINE ---
+        function evaluateLogic() {
+            // Main Logic always runs
+            outputs.y0 = inputs.x1; 
+            
+            // Sub Logic only runs if CALL (X0) is active
+            // Note: In real PLC, if scan stops, output freezes. 
+            // For this visualization, we will update Y1 only during the scan step of P0.
+            
+            updateOutputsUI();
+        }
+
+        function updateOutputsUI() {
+            // Y0
+            const y0El = document.getElementById('sym-y0');
+            const ledY0 = document.getElementById('led-y0');
+            const w0Mid = document.getElementById('w-0-mid');
+            const w0End = document.getElementById('w-0-end');
+
+            if(outputs.y0) {
+                y0El.classList.add('active');
+                ledY0.classList.add('on');
+                w0Mid.classList.add('active');
+                w0End.classList.add('active');
+            } else {
+                y0El.classList.remove('active');
+                ledY0.classList.remove('on');
+                w0Mid.classList.remove('active');
+                w0End.classList.remove('active');
+            }
+
+            // Call Rung Wires
+            const callInst = document.getElementById('inst-call');
+            const w1Mid = document.getElementById('w-1-mid');
+            const w1End = document.getElementById('w-1-end');
+            if(inputs.x0) {
+                callInst.style.background = "rgba(6, 182, 212, 0.2)";
+                w1Mid.classList.add('active');
+                w1End.classList.add('active');
+            } else {
+                callInst.style.background = "transparent";
+                w1Mid.classList.remove('active');
+                w1End.classList.remove('active');
+            }
+        }
+
+        function updateSubUI(active) {
+            // Y1 Visuals inside subroutine
+            const y1El = document.getElementById('sym-y1');
+            const ledY1 = document.getElementById('led-y1');
+            const w3Mid = document.getElementById('w-3-mid');
+            const w3End = document.getElementById('w-3-end');
+
+            // If scanned, update logic
+            if(active) {
+                outputs.y1 = inputs.x2;
+                subZone.classList.add('active-zone');
+                statusBadge.classList.add('active');
+                statusBadge.innerText = "SUBROUTINE";
+            } else {
+                subZone.classList.remove('active-zone');
+                statusBadge.classList.remove('active');
+                statusBadge.innerText = "MAIN LOOP";
+            }
+
+            if(outputs.y1) {
+                y1El.classList.add('active');
+                ledY1.classList.add('on');
+                w3Mid.classList.add('active');
+                w3End.classList.add('active');
+            } else {
+                y1El.classList.remove('active');
+                ledY1.classList.remove('on');
+                w3Mid.classList.remove('active');
+                w3End.classList.remove('active');
+            }
+        }
+
+        // --- SCAN ANIMATION LOOP ---
+        // Normal path: 0 -> 1 -> 2 (FEND) -> Loop
+        // Call path:   0 -> 1 -> 3 (P0) -> 4 (SRET) -> 2 (FEND) -> Loop
+        // *Correction: SRET returns to instruction AFTER call. In PLC, usually next rung.
+        // For visual simplicity: Call -> P0..Sret -> Fend.
+
+        const pathNormal = [0, 1, 2];
+        const pathCall = [0, 1, 3, 4]; // We skip 2 initially, then loop back.
+        
+        // Actually, let's visualize the flow strictly line by line
+        
+        function runScan() {
+            if(!isRunning) return;
+
+            let delay = 2100 - parseInt(document.getElementById('speed-slider').value);
+            
+            // Determine Next Step
+            let nextRungIndex;
+            let currentPath = inputs.x0 ? pathCall : pathNormal;
+
+            if (scanStep >= currentPath.length) {
+                scanStep = 0; // Loop back
+            }
+            
+            nextRungIndex = currentPath[scanStep];
+
+            // Move Cursor
+            let targetRung = rungs[nextRungIndex];
+            cursor.style.opacity = 1;
+            cursor.style.top = (targetRung.offsetTop + targetRung.offsetHeight/2 - 2) + "px";
+
+            // Logic Updates per Step
+            evaluateLogic();
+
+            // Handle Subroutine Visibility
+            if(nextRungIndex === 3 || nextRungIndex === 4) {
+                updateSubUI(true);
+            } else {
+                updateSubUI(false);
+            }
+
+            scanStep++;
+            loopTimeout = setTimeout(runScan, delay);
+        }
+
+        // --- CONTROLS ---
+        function stopSim() {
+            isRunning = false;
+            clearTimeout(loopTimeout);
+            cursor.style.opacity = 0;
+            document.getElementById('btn-stop').disabled = true;
+            document.getElementById('btn-stop').style.background = "#334155";
+            document.getElementById('btn-run').disabled = false;
+            document.getElementById('btn-run').style.background = "var(--accent-green)";
+            document.getElementById('btn-run').style.color = "black";
+            document.getElementById('btn-run').innerText = "START EXECUTION";
+            statusBadge.innerText = "HALTED";
+        }
+
+        function startSim() {
+            if(isRunning) return;
+            isRunning = true;
+            document.getElementById('btn-stop').disabled = false;
+            document.getElementById('btn-stop').style.background = "var(--accent-red)";
+            document.getElementById('btn-run').disabled = true;
+            document.getElementById('btn-run').style.background = "#334155";
+            document.getElementById('btn-run').style.color = "#94a3b8";
+            document.getElementById('btn-run').innerText = "RUNNING...";
+            runScan();
+        }
+
+        // Init
+        evaluateLogic();
+        runScan();
+
+    </script>
+</body>
+</html>

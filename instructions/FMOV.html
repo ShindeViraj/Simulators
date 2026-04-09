@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - FMOV Instruction Visualizer</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-cyan: #06b6d4;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-line: #334155;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 15px 25px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .title h1 { margin: 0; font-size: 1.2rem; letter-spacing: 1px; color: white; text-transform: uppercase; }
+        .title span { font-size: 0.8rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* INSTRUCTION BUILDER */
+        .instruction-panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .ladder-rung {
+            display: flex;
+            align-items: center;
+            font-family: 'Consolas', monospace;
+            font-size: 1.2rem;
+            color: white;
+            position: relative;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .rail { width: 4px; height: 80px; background-color: #64748b; position: absolute; }
+        .rail.left { left: 20px; }
+        .rail.right { right: 20px; }
+        
+        .wire { height: 3px; background-color: white; width: 60px; }
+        .wire.active { background-color: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
+
+        .contact {
+            border: 3px solid white; border-top: none; border-bottom: none;
+            width: 30px; height: 30px; margin: 0 10px; position: relative;
+        }
+        .contact::before { content: 'X0'; position: absolute; top: -20px; left: 5px; font-size: 0.8rem; color: var(--accent-cyan); }
+        .contact.active { border-color: var(--accent-green); }
+
+        .inst-box {
+            border: 2px solid white;
+            padding: 15px 30px;
+            min-width: 250px;
+            display: flex;
+            justify-content: space-between;
+            background-color: var(--bg-dark);
+            position: relative;
+        }
+        
+        .inst-box.executing { border-color: var(--accent-green); box-shadow: 0 0 15px rgba(34, 197, 94, 0.2); }
+
+        .param-group { display: flex; flex-direction: column; align-items: center; margin: 0 10px; }
+        .param-label { font-size: 0.6rem; color: var(--text-muted); margin-bottom: 4px; }
+        .param-val { color: var(--accent-cyan); font-weight: bold; }
+        
+        /* SETTINGS FORM */
+        .settings-bar {
+            position: absolute; bottom: -50px; 
+            display: flex; gap: 20px; background: #0f172a; padding: 10px; 
+            border: 1px solid #334155; border-radius: 6px; z-index: 10;
+        }
+        .input-grp { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #94a3b8; }
+        select, input { background: #1e293b; border: 1px solid #475569; color: white; padding: 4px; border-radius: 4px; }
+
+        /* MAIN VISUALIZATION AREA */
+        .stage {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 1fr;
+            gap: 20px;
+            min-height: 0; /* Fix flex overflow */
+        }
+
+        .mem-col {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .col-header {
+            background-color: rgba(0,0,0,0.2);
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 1px solid var(--grid-line);
+            color: var(--accent-blue);
+        }
+
+        .mem-grid {
+            overflow-y: auto;
+            flex: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        /* Scrollbar Styling */
+        .mem-grid::-webkit-scrollbar { width: 8px; }
+        .mem-grid::-webkit-scrollbar-track { background: #0f172a; }
+        .mem-grid::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .mem-grid::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .reg-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #0f172a;
+            padding: 8px 15px;
+            border-radius: 4px;
+            border: 1px solid #334155;
+            font-family: monospace;
+            transition: all 0.3s;
+            position: relative;
+            flex-shrink: 0; 
+        }
+
+        .reg-row.source-active { border-color: var(--accent-green); background-color: rgba(34, 197, 94, 0.1); }
+        .reg-row.dest-active { border-color: var(--accent-red); background-color: rgba(239, 68, 68, 0.1); animation: flash 0.5s; }
+
+        .reg-addr { color: #64748b; font-weight: bold; }
+        .reg-val { 
+            color: var(--accent-cyan); font-weight: bold; 
+            cursor: pointer; border-bottom: 1px dashed #334155; 
+            min-width: 40px; text-align: right;
+        }
+        .reg-val:hover { color: white; border-color: white; }
+
+        /* ANIMATION AREA */
+        .anim-zone {
+            position: relative;
+            border: 1px dashed #334155;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .arrow-path {
+            position: absolute;
+            width: 100%; height: 2px;
+            background: #334155;
+            top: 50%;
+        }
+
+        .packet {
+            position: absolute;
+            width: 60px; height: 30px;
+            background-color: var(--accent-green);
+            color: black;
+            font-weight: bold;
+            font-family: monospace;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 4px;
+            box-shadow: 0 0 10px var(--accent-green);
+            opacity: 0;
+            top: 50%; left: 10%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+        }
+
+        /* CONTROLS FOOTER */
+        .footer {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: var(--bg-panel);
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        button {
+            padding: 10px 25px;
+            border-radius: 6px;
+            font-weight: bold; cursor: pointer; border: none;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+        
+        .btn-exec { background-color: var(--accent-green); color: black; }
+        .btn-exec:hover { background-color: #4ade80; }
+        .btn-exec:disabled { background-color: #334155; color: #64748b; cursor: not-allowed; }
+
+        .btn-stop { background-color: var(--accent-red); color: white; margin-left: 10px; }
+        .btn-stop:hover { background-color: #dc2626; }
+        .btn-stop:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-reset { background-color: #334155; color: white; }
+        .btn-reset:hover { background-color: #475569; }
+
+        @keyframes flash { 0% { background-color: white; } 100% { background-color: rgba(239, 68, 68, 0.1); } }
+
+        /* UTILITY */
+        .status-text { font-family: monospace; color: var(--accent-amber); margin-left: 20px; }
+        input[type=number] { width: 60px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>GX WORKS3 SIMULATOR | FMOV INSTRUCTION</span>
+        </div>
+        <div>
+            <span style="font-size: 0.8rem; color: #94a3b8;">MELSEC iQ-R Series Mode</span>
+        </div>
+    </div>
+
+    <div class="instruction-panel">
+        <div class="rail left"></div>
+        <div class="ladder-rung">
+            <div id="wire-in" class="wire"></div>
+            <div id="contact-x0" class="contact"></div>
+            <div id="wire-mid" class="wire"></div>
+            
+            <div id="inst-box" class="inst-box">
+                <div style="font-weight:bold; color:white; margin-right:15px;">FMOV</div>
+                <div class="param-group">
+                    <span class="param-label">Source (S)</span>
+                    <span id="lbl-source" class="param-val">D0</span>
+                </div>
+                <div class="param-group">
+                    <span class="param-label">Dest (D)</span>
+                    <span id="lbl-dest" class="param-val">D100</span>
+                </div>
+                <div class="param-group">
+                    <span class="param-label">Points (n)</span>
+                    <span id="lbl-count" class="param-val">K10</span>
+                </div>
+            </div>
+            
+            <div id="wire-out" class="wire"></div>
+        </div>
+        <div class="rail right"></div>
+
+        <div class="settings-bar">
+            <div class="input-grp">
+                Source: <select id="sel-source" onchange="updateSettings()"></select>
+            </div>
+            <div class="input-grp">
+                Dest: <select id="sel-dest" onchange="updateSettings()"></select>
+            </div>
+            <div class="input-grp">
+                Count (n): <input type="number" id="inp-count" value="10" min="1" max="255" onchange="updateSettings()">
+            </div>
+        </div>
+    </div>
+
+    <div class="stage">
+        <div class="mem-col">
+            <div class="col-header">SOURCE DEVICE MEMORY</div>
+            <div id="grid-source" class="mem-grid">
+                </div>
+        </div>
+
+        <div class="anim-zone">
+            <div style="color: #64748b; font-size: 0.8rem; position: absolute; top: 10px;">DATA BUS</div>
+            <div class="arrow-path"></div>
+            <div id="anim-packet" class="packet">1234</div>
+            <div id="status-msg" style="margin-top: 100px; color: var(--accent-cyan); font-family: monospace;">READY</div>
+        </div>
+
+        <div class="mem-col">
+            <div class="col-header">DESTINATION DEVICE MEMORY</div>
+            <div id="grid-dest" class="mem-grid">
+                </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:0.8rem; color:#94a3b8;">Simulation Speed:</span>
+            <input type="range" id="sim-speed" min="100" max="2000" value="800">
+        </div>
+        <div>
+            <button class="btn-reset" onclick="resetMemory()">RESET MEMORY</button>
+            <button id="btn-run" class="btn-exec" onclick="runSimulation()">EXECUTE FMOV (X0 ON)</button>
+            <button id="btn-stop" class="btn-stop" onclick="stopSimulation()" disabled>STOP</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const MEM_SIZE = 500; 
+        let memory = new Array(MEM_SIZE).fill(0);
+        let isRunning = false; 
+        
+        // Populate initial random data
+        for(let i=0; i<MEM_SIZE; i++) memory[i] = Math.floor(Math.random() * 9000) + 1000;
+
+        // UI References
+        const els = {
+            gridSource: document.getElementById('grid-source'),
+            gridDest: document.getElementById('grid-dest'),
+            selSource: document.getElementById('sel-source'),
+            selDest: document.getElementById('sel-dest'),
+            inpCount: document.getElementById('inp-count'),
+            lblSource: document.getElementById('lbl-source'),
+            lblDest: document.getElementById('lbl-dest'),
+            lblCount: document.getElementById('lbl-count'),
+            packet: document.getElementById('anim-packet'),
+            status: document.getElementById('status-msg'),
+            btnRun: document.getElementById('btn-run'),
+            btnStop: document.getElementById('btn-stop'),
+            wires: [document.getElementById('wire-in'), document.getElementById('wire-mid'), document.getElementById('wire-out')],
+            contact: document.getElementById('contact-x0'),
+            instBox: document.getElementById('inst-box'),
+            speed: document.getElementById('sim-speed')
+        };
+
+        // --- INITIALIZATION ---
+        function init() {
+            // UPDATED: Fill dropdowns with EVERY address (D0 to D499)
+            for(let i=0; i<MEM_SIZE; i++) {
+                let optS = new Option(`D${i}`, i);
+                let optD = new Option(`D${i}`, i);
+                if(i===0) optS.selected = true; 
+                if(i===100) optD.selected = true; 
+                els.selSource.add(optS);
+                els.selDest.add(optD);
+            }
+            updateSettings();
+        }
+
+        // --- RENDER MEMORY GRIDS ---
+        function renderGrids(displayCount) {
+            renderColumn(els.gridSource, 'source', parseInt(els.selSource.value), displayCount);
+            renderColumn(els.gridDest, 'dest', parseInt(els.selDest.value), displayCount);
+        }
+
+        function renderColumn(container, type, startAddr, displayCount) {
+            container.innerHTML = '';
+            
+            for(let i=0; i<displayCount; i++) {
+                let addr = startAddr + i;
+                if(addr >= MEM_SIZE) break;
+
+                let row = document.createElement('div');
+                row.className = 'reg-row';
+                row.id = `${type}-row-${i}`; 
+
+                let addrDiv = document.createElement('div');
+                addrDiv.className = 'reg-addr';
+                addrDiv.innerText = `D${addr}`;
+
+                let valDiv = document.createElement('div');
+                valDiv.className = 'reg-val';
+                valDiv.innerText = memory[addr];
+                
+                // Allow edits on Source
+                if(type === 'source') {
+                    valDiv.onclick = () => {
+                        let newVal = prompt(`Enter value for D${addr}:`, memory[addr]);
+                        if(newVal !== null && !isNaN(newVal)) {
+                            memory[addr] = parseInt(newVal);
+                            let currentCount = parseInt(els.inpCount.value);
+                            renderGrids(currentCount); 
+                        }
+                    };
+                    valDiv.title = "Click to edit";
+                }
+
+                row.appendChild(addrDiv);
+                row.appendChild(valDiv);
+                container.appendChild(row);
+            }
+        }
+
+        // --- UPDATE SETTINGS UI ---
+        function updateSettings() {
+            let s = els.selSource.value;
+            let d = els.selDest.value;
+            let n = parseInt(els.inpCount.value);
+            
+            if (n > 255) { n = 255; els.inpCount.value = 255; }
+            if (isNaN(n) || n < 1) n = 1;
+
+            els.lblSource.innerText = `D${s}`;
+            els.lblDest.innerText = `D${d}`;
+            els.lblCount.innerText = `K${n}`;
+            
+            renderGrids(n);
+        }
+
+        // --- SIMULATION LOGIC (FMOV) ---
+        function stopSimulation() {
+            isRunning = false;
+            els.status.innerText = "EXECUTION STOPPED BY USER";
+        }
+
+        async function runSimulation() {
+            const startS = parseInt(els.selSource.value);
+            const startD = parseInt(els.selDest.value);
+            const count = parseInt(els.inpCount.value);
+
+            isRunning = true;
+            els.btnRun.disabled = true;
+            els.btnStop.disabled = false;
+            els.wires.forEach(w => w.classList.add('active'));
+            els.contact.classList.add('active');
+            els.instBox.classList.add('executing');
+            els.status.innerText = "INSTRUCTION EXECUTING...";
+
+            // FMOV: Source value is CONSTANT (Taken from first register only)
+            const valToMove = memory[startS];
+
+            for(let i=0; i<count; i++) {
+                if(!isRunning) break;
+
+                let currentSpeed = parseInt(els.speed.value);
+                let delay = 2100 - currentSpeed; 
+
+                // Highlight Source Row (Always the first one for FMOV visualisation)
+                // Note: We highlight the row at index 0 of the rendered grid, 
+                // which corresponds to the selected Source Address.
+                let rowS = document.getElementById(`source-row-0`); 
+
+                if(rowS) {
+                    rowS.classList.add('source-active');
+                    // Ensure it stays visible
+                    rowS.scrollIntoView({behavior: "smooth", block: "center"});
+                }
+
+                // Animation
+                els.packet.innerText = valToMove;
+                els.packet.style.opacity = 1;
+                els.packet.style.left = "10%";
+                
+                await new Promise(r => setTimeout(r, 50)); 
+                els.packet.style.transition = `left ${delay/2}ms ease-in-out`;
+                els.packet.style.left = "90%";
+
+                await new Promise(r => setTimeout(r, delay/2));
+                if(!isRunning) break; 
+
+                // Logic: Fill Dest with constant Value
+                memory[startD + i] = valToMove;
+
+                renderGrids(count);
+                
+                let rowD = document.getElementById(`dest-row-${i}`);
+                if(rowD) {
+                    rowD.classList.add('dest-active');
+                    rowD.scrollIntoView({behavior: "smooth", block: "center"});
+
+                    // Re-highlight Source (since re-render clears classes)
+                    let newRowS = document.getElementById(`source-row-0`);
+                    if(newRowS) newRowS.classList.add('source-active');
+                }
+
+                els.status.innerText = `FILLING D${startD+i} WITH ${valToMove}`;
+
+                await new Promise(r => setTimeout(r, delay/2));
+
+                els.packet.style.opacity = 0;
+                els.packet.style.transition = 'none'; 
+                els.packet.style.left = "10%";
+            }
+
+            if(isRunning) els.status.innerText = "EXECUTION COMPLETE";
+            
+            // Cleanup
+            // Remove highlight from source
+            let finalRowS = document.getElementById(`source-row-0`);
+            if(finalRowS) finalRowS.classList.remove('source-active');
+
+            els.wires.forEach(w => w.classList.remove('active'));
+            els.contact.classList.remove('active');
+            els.instBox.classList.remove('executing');
+            els.btnRun.disabled = false;
+            els.btnStop.disabled = true;
+            isRunning = false;
+        }
+
+        function resetMemory() {
+            for(let i=0; i<MEM_SIZE; i++) memory[i] = Math.floor(Math.random() * 9000) + 1000;
+            
+            // Clear Dest Only
+            const startD = parseInt(els.selDest.value);
+            const count = parseInt(els.inpCount.value);
+            
+            for(let i=0; i<count; i++) {
+                if(startD + i < MEM_SIZE) {
+                    memory[startD + i] = 0;
+                }
+            }
+
+            updateSettings(); 
+            els.status.innerText = "MEMORY RESET (DEST CLEARED)";
+        }
+
+        init();
+
+    </script>
+</body>
+</html>

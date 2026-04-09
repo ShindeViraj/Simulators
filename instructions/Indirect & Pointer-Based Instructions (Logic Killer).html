@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - Indirect Addressing (Z0/Z1)</title>
+    <style>
+        /* --- NEON THEME --- */
+        :root {
+            --bg-body: #0b1120;
+            --bg-panel: #111827;
+            --grid-line: #1f2937;
+            
+            --wire-off: #374151;
+            --wire-on: #22c55e;
+            --pointer-z0: #06b6d4; /* Cyan for Z0 */
+            --pointer-z1: #f59e0b; /* Amber for Z1 */
+            --danger-zone: #ef4444; /* Red */
+            --zmov-color: #d946ef; /* Purple */
+            
+            --text-main: #ffffff;
+            --text-muted: #9ca3af;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Consolas, monospace;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-transform: uppercase; font-weight: bold; }
+        .title span { font-size: 0.75rem; color: var(--pointer-z0); font-weight: bold; }
+
+        /* MAIN LAYOUT */
+        .main-grid {
+            display: flex;
+            flex: 1;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        /* LEFT: MEMORY MAP */
+        .memory-panel {
+            flex: 1;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .mem-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 5px;
+        }
+
+        .mem-cell {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #0f172a;
+            border: 1px solid #374151;
+            padding: 8px 15px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .mem-addr { color: #64748b; font-size: 0.8rem; width: 40px; }
+        .mem-val { 
+            font-family: monospace; font-weight: bold; color: var(--wire-on); 
+            background: transparent; border: none; text-align: right; width: 60px;
+        }
+        .mem-val:focus { outline: none; border-bottom: 1px solid white; }
+
+        /* DYNAMIC HIGHLIGHTS */
+        /* Z0 Highlight */
+        .mem-cell.target-z0 {
+            border-color: var(--pointer-z0);
+            box-shadow: inset 0 0 15px rgba(6, 182, 212, 0.2);
+        }
+        .mem-cell.target-z0::after {
+            content: '← Z0 Pointer'; position: absolute; right: -90px; color: var(--pointer-z0); font-size: 0.7rem; font-weight: bold; width: 80px;
+        }
+
+        /* Z1 Highlight */
+        .mem-cell.target-z1 {
+            border-color: var(--danger-zone);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .mem-cell.target-z1.first::after {
+            content: 'ZRST ZONE (Z1)'; position: absolute; right: 10px; color: var(--danger-zone); font-size: 0.7rem; font-weight: bold; opacity: 0.5;
+        }
+
+        /* ZMOV Highlights */
+        .mem-cell.src-zmov { border-left: 4px solid var(--zmov-color); }
+        .mem-cell.dst-zmov { border-right: 4px solid var(--zmov-color); }
+
+        /* RIGHT: CONTROLS & LADDER */
+        .control-panel {
+            flex: 1.5;
+            display: flex; flex-direction: column; gap: 15px;
+        }
+
+        .panel-box {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .panel-header { 
+            color: #fff; font-weight: bold; border-bottom: 1px solid var(--grid-line); 
+            padding-bottom: 5px; margin-bottom: 10px; font-size: 0.85rem; text-transform: uppercase;
+        }
+
+        /* LADDER RUNGS */
+        .rung {
+            display: flex; align-items: center; padding: 10px 0; border-bottom: 1px dashed #333; position: relative;
+        }
+        .symbol {
+            width: 40px; height: 40px; border: 1px solid #4b5563; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; background: #0b1120; margin-right: 15px; flex-shrink: 0;
+        }
+        .symbol:active { transform: scale(0.95); }
+        .symbol-label { font-size: 0.7rem; color: #fff; margin-top: -5px; }
+
+        .inst-block {
+            border: 1px solid #4b5563; color: #9ca3af;
+            padding: 8px 15px; font-family: monospace; font-size: 0.9rem;
+            flex-grow: 1; text-align: left; position: relative;
+            background: #0b1120; transition: all 0.2s;
+        }
+        
+        .inst-block.mov { border-color: var(--pointer-z0); color: var(--pointer-z0); }
+        .inst-block.zrst { border-color: var(--pointer-z1); color: var(--pointer-z1); }
+        .inst-block.zmov { border-color: var(--zmov-color); color: var(--zmov-color); }
+        
+        .inst-block.executing { 
+            background: rgba(255,255,255,0.1); 
+            box-shadow: 0 0 15px currentColor; 
+            transform: scale(1.02);
+        }
+
+        .eff-addr { 
+            background: #333; padding: 2px 6px; border-radius: 4px; color: white; font-weight: bold; margin-left: 5px;
+        }
+
+        /* POINTER CONTROLS */
+        .pointer-ctrl {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 10px; background: #0f172a; padding: 10px; border-radius: 4px;
+        }
+        .pointer-val { 
+            font-size: 1.2rem; font-weight: bold; font-family: monospace; width: 40px; text-align: right;
+        }
+        input[type=range] { flex-grow: 1; margin: 0 15px; }
+        
+        /* Z0 Slider */
+        #rng-z0 { accent-color: var(--pointer-z0); }
+        .z0-text { color: var(--pointer-z0); }
+        
+        /* Z1 Slider */
+        #rng-z1 { accent-color: var(--pointer-z1); }
+        .z1-text { color: var(--pointer-z1); }
+
+        .dest-box {
+            margin-top: 10px; background: #0f172a; border: 1px solid var(--grid-line); padding: 10px; border-radius: 4px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .narrative {
+            font-size: 0.8rem; color: #fff;
+            background: rgba(255,255,255,0.05); padding: 10px; border-radius: 4px; margin-top: auto;
+            min-height: 40px; display: flex; align-items: center;
+        }
+
+        .btn-reset { 
+            background: #374151; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>INDIRECT ADDRESSING | INDEX REGISTERS (Z0/Z1)</span>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        
+        <div class="memory-panel">
+            <div class="panel-header">Data Registers (D)</div>
+            <div class="mem-grid" id="mem-grid"></div>
+        </div>
+
+        <div class="control-panel">
+            
+            <div class="panel-box">
+                <div class="panel-header">Index Register Controls</div>
+                
+                <div class="pointer-ctrl" style="border-left: 3px solid var(--pointer-z0);">
+                    <span class="z0-text">Index Z0</span>
+                    <input type="range" id="rng-z0" min="0" max="15" value="0" oninput="updatePointers()">
+                    <span id="val-z0" class="pointer-val z0-text">0</span>
+                </div>
+
+                <div class="pointer-ctrl" style="border-left: 3px solid var(--pointer-z1);">
+                    <span class="z1-text">Index Z1</span>
+                    <input type="range" id="rng-z1" min="0" max="10" value="0" oninput="updatePointers()">
+                    <span id="val-z1" class="pointer-val z1-text">0</span>
+                </div>
+            </div>
+
+            <div class="panel-box">
+                <div class="panel-header">Instructions</div>
+                
+                <div class="rung">
+                    <div class="symbol" onmousedown="execMov()" onmouseup="release('inst-mov')">
+                        <span style="font-weight:bold; color:white;">X0</span>
+                        <span class="symbol-label">MOV</span>
+                    </div>
+                    <div class="inst-block mov" id="inst-mov">
+                        <strong>MOV D0Z0 D20</strong>
+                        <br>
+                        <span style="font-size:0.75rem; color:#aaa;">Effective: Move D<span id="eff-mov-src" class="eff-addr">0</span> → D20</span>
+                    </div>
+                </div>
+
+                <div class="dest-box">
+                    <span style="color:#9ca3af; font-size:0.8rem;">Destination D20 Value:</span>
+                    <span id="val-d20" style="font-family:monospace; font-size:1.2rem; font-weight:bold; color:var(--wire-on);">0</span>
+                </div>
+
+                <div class="rung" style="margin-top:20px;">
+                    <div class="symbol" onmousedown="execZrst()" onmouseup="release('inst-zrst')">
+                        <span style="font-weight:bold; color:white;">X1</span>
+                        <span class="symbol-label">ZRST</span>
+                    </div>
+                    <div class="inst-block zrst" id="inst-zrst">
+                        <strong>ZRST D0Z1 D4Z1</strong>
+                        <br>
+                        <span style="font-size:0.75rem; color:#aaa;">Effective: Reset D<span id="eff-zrst-start" class="eff-addr">0</span> to D<span id="eff-zrst-end" class="eff-addr">4</span></span>
+                    </div>
+                </div>
+
+                <div class="rung" style="margin-top:20px;">
+                    <div class="symbol" onmousedown="execZmov()" onmouseup="release('inst-zmov')">
+                        <span style="font-weight:bold; color:white;">X2</span>
+                        <span class="symbol-label">ZMOV</span>
+                    </div>
+                    <div class="inst-block zmov" id="inst-zmov">
+                        <strong>ZMOV D0Z0 D10Z0 K3</strong>
+                        <br>
+                        <span style="font-size:0.75rem; color:#aaa;">
+                            Effective: Copy D<span id="eff-zmov-src" class="eff-addr">0</span>.. to D<span id="eff-zmov-dst" class="eff-addr">10</span>.. (3 Words)
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="narrative" class="narrative">
+                Ready. Adjust Z0 or Z1 sliders to move pointers.
+            </div>
+
+            <button class="btn-reset" onclick="resetSim()">RESET ALL REGISTERS</button>
+
+        </div>
+    </div>
+
+    <script>
+        // STATE
+        const MEM_SIZE = 25; 
+        let memory = new Array(MEM_SIZE).fill(0);
+        
+        for(let i=0; i<MEM_SIZE; i++) memory[i] = Math.floor(Math.random() * 900) + 100;
+        memory[20] = 0; // D20
+
+        let z0 = 0;
+        let z1 = 0;
+
+        // DOM ELEMENTS
+        const grid = document.getElementById('mem-grid');
+        const els = {
+            valZ0: document.getElementById('val-z0'),
+            valZ1: document.getElementById('val-z1'),
+            
+            effMovSrc: document.getElementById('eff-mov-src'),
+            effZrstStart: document.getElementById('eff-zrst-start'),
+            effZrstEnd: document.getElementById('eff-zrst-end'),
+            effZmovSrc: document.getElementById('eff-zmov-src'),
+            effZmovDst: document.getElementById('eff-zmov-dst'),
+            
+            valD20: document.getElementById('val-d20'),
+            instMov: document.getElementById('inst-mov'),
+            instZrst: document.getElementById('inst-zrst'),
+            instZmov: document.getElementById('inst-zmov'),
+            narrative: document.getElementById('narrative')
+        };
+
+        // INIT GRID
+        function initGrid() {
+            grid.innerHTML = '';
+            for(let i=0; i<MEM_SIZE; i++) {
+                let row = document.createElement('div');
+                row.className = 'mem-cell';
+                row.id = `cell-${i}`;
+                
+                row.innerHTML = `
+                    <span class="mem-addr">D${i}</span>
+                    <input type="number" class="mem-val" id="val-${i}" value="${memory[i]}" onchange="updateMem(${i}, this.value)">
+                `;
+                grid.appendChild(row);
+            }
+            updatePointers();
+        }
+
+        function updateMem(idx, val) {
+            memory[idx] = parseInt(val) || 0;
+        }
+
+        function updatePointers() {
+            z0 = parseInt(document.getElementById('rng-z0').value);
+            z1 = parseInt(document.getElementById('rng-z1').value);
+
+            els.valZ0.innerText = z0;
+            els.valZ1.innerText = z1;
+
+            // Effective Addresses
+            let movSrc = 0 + z0; // D0Z0
+            let zrstStart = 0 + z1; // D0Z1
+            let zrstEnd = 4 + z1;   // D4Z1
+            
+            // ZMOV Addrs (D0Z0 -> D10Z0, K3)
+            let zmovSrcStart = 0 + z0;
+            let zmovDstStart = 10 + z0;
+
+            // Update Labels
+            els.effMovSrc.innerText = movSrc;
+            els.effZrstStart.innerText = zrstStart;
+            els.effZrstEnd.innerText = zrstEnd;
+            els.effZmovSrc.innerText = zmovSrcStart;
+            els.effZmovDst.innerText = zmovDstStart;
+
+            // Highlights
+            for(let i=0; i<MEM_SIZE; i++) {
+                let cell = document.getElementById(`cell-${i}`);
+                cell.className = 'mem-cell'; // Reset
+
+                // MOV Pointer (Z0)
+                if (i === movSrc) cell.classList.add('target-z0');
+
+                // ZRST Zone (Z1)
+                if (i >= zrstStart && i <= zrstEnd) {
+                    cell.classList.add('target-z1');
+                    if (i === zrstStart) cell.classList.add('first');
+                }
+                
+                // ZMOV Hints
+                if (i >= zmovSrcStart && i < zmovSrcStart + 3) cell.classList.add('src-zmov');
+                if (i >= zmovDstStart && i < zmovDstStart + 3) cell.classList.add('dst-zmov');
+            }
+        }
+
+        // --- INSTRUCTIONS ---
+
+        function execMov() {
+            els.instMov.classList.add('executing');
+            let srcAddr = 0 + z0;
+            
+            if (srcAddr >= MEM_SIZE) {
+                error(`D${srcAddr} Out of Range`); return;
+            }
+
+            let val = memory[srcAddr];
+            els.valD20.innerText = val;
+            msg(`MOV Executed: Copied D${srcAddr} (${val}) to D20.`, 'var(--pointer-z0)');
+        }
+
+        function execZrst() {
+            els.instZrst.classList.add('executing');
+            let start = 0 + z1;
+            let end = 4 + z1;
+            let count = 0;
+
+            for(let i = start; i <= end; i++) {
+                if(i < MEM_SIZE) {
+                    memory[i] = 0;
+                    document.getElementById(`val-${i}`).value = 0;
+                    flashCell(i, "rgba(239, 68, 68, 0.3)");
+                    count++;
+                }
+            }
+            msg(`ZRST Executed: Reset ${count} registers (D${start}-D${end}).`, 'var(--pointer-z1)');
+        }
+
+        function execZmov() {
+            els.instZmov.classList.add('executing');
+            let srcStart = 0 + z0;
+            let dstStart = 10 + z0;
+            let len = 3;
+            let copied = [];
+
+            // Read
+            for(let i=0; i<len; i++) {
+                if(srcStart + i < MEM_SIZE) copied.push(memory[srcStart + i]);
+                else copied.push(0);
+            }
+
+            // Write
+            for(let i=0; i<len; i++) {
+                let dst = dstStart + i;
+                if(dst < MEM_SIZE) {
+                    memory[dst] = copied[i];
+                    document.getElementById(`val-${dst}`).value = copied[i];
+                    flashCell(dst, "rgba(217, 70, 239, 0.3)");
+                }
+            }
+            
+            msg(`ZMOV Executed: Copied 3 words from D${srcStart} to D${dstStart}.`, 'var(--zmov-color)');
+        }
+
+        // UTILS
+        function release(id) {
+            document.getElementById(id).classList.remove('executing');
+        }
+
+        function flashCell(idx, color) {
+            let cell = document.getElementById(`cell-${idx}`);
+            cell.style.backgroundColor = color;
+            setTimeout(() => { cell.style.backgroundColor = ""; }, 300);
+        }
+
+        function msg(text, color) {
+            els.narrative.innerText = text;
+            els.narrative.style.borderLeftColor = color;
+        }
+        
+        function error(text) {
+            els.narrative.innerText = "ERROR: " + text;
+            els.narrative.style.borderLeftColor = "red";
+        }
+
+        function resetSim() {
+            for(let i=0; i<MEM_SIZE; i++) {
+                memory[i] = 0;
+                document.getElementById(`val-${i}`).value = 0;
+            }
+            els.valD20.innerText = 0;
+            msg("Memory Cleared.", "white");
+        }
+
+        initGrid();
+
+    </script>
+</body>
+</html>

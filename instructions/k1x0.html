@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC KnX0 Instruction Simulator</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-main: #e0e0e0;
+            --accent: #00e5ff;
+            --active: #00ff00;
+            --inactive: #555;
+        }
+
+        body {
+            font-family: 'Segoe UI', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        h2 { margin: 10px 0; color: var(--accent); letter-spacing: 1px; }
+
+        .container {
+            display: flex;
+            width: 98%;
+            height: 90%;
+            gap: 10px;
+        }
+
+        .canvas-box {
+            flex: 3;
+            background: #1e1e1e;
+            border-radius: 8px;
+            border: 2px solid #333;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+
+        .controls {
+            flex: 1;
+            background: #252525;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 300px;
+        }
+
+        .panel-section {
+            border-bottom: 1px solid #444;
+            padding-bottom: 15px;
+        }
+
+        .label {
+            color: var(--accent);
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .btn-group { display: flex; gap: 5px; }
+        
+        .btn-k {
+            flex: 1;
+            padding: 10px;
+            background: #333;
+            border: 1px solid #555;
+            color: #aaa;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .btn-k:hover { background: #444; }
+        .btn-k.active {
+            background: #004444;
+            color: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+        }
+
+        .value-display {
+            font-size: 2rem;
+            color: #ffff00;
+            text-align: right;
+            font-family: 'Courier New', Courier, monospace;
+            border: 1px solid #444;
+            padding: 10px;
+            background: #000;
+            border-radius: 4px;
+        }
+
+        .info-text {
+            font-size: 0.85rem;
+            color: #888;
+            line-height: 1.4;
+        }
+        
+        .switch-hint {
+            margin-top: auto;
+            text-align: center;
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h2>PLC Instruction: MOV KnX0 D0</h2>
+
+    <div class="container">
+        <div class="canvas-box">
+            <canvas id="simCanvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="panel-section">
+                <span class="label">Instruction Config (Kn)</span>
+                <div class="btn-group">
+                    <button class="btn-k" onclick="setK(1)">K1</button>
+                    <button class="btn-k" onclick="setK(2)">K2</button>
+                    <button class="btn-k" onclick="setK(3)">K3</button>
+                    <button class="btn-k active" onclick="setK(4)">K4</button>
+                </div>
+                <div style="margin-top:5px; font-size:0.8rem; color:#aaa;" id="kDesc">
+                    K4 = 16 Bits (Word)
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <span class="label">Register D0 Value</span>
+                <div style="font-size:0.8rem; color:#aaa; margin-bottom:2px;">Decimal:</div>
+                <div class="value-display" id="valDec">0</div>
+                <div style="font-size:0.8rem; color:#aaa; margin:10px 0 2px 0;">Hexadecimal:</div>
+                <div class="value-display" style="color:#00e5ff; font-size:1.5rem;" id="valHex">0000h</div>
+            </div>
+
+            <div class="info-text">
+                <strong>Logic:</strong><br>
+                The instruction groups input bits (X) into a value and moves it to register (D0).<br><br>
+                <span style="color:var(--accent)">K1</span> = 4 bits (X0-X3)<br>
+                <span style="color:var(--accent)">K2</span> = 8 bits (X0-X7)<br>
+                <span style="color:var(--accent)">K3</span> = 12 bits (X0-X11)<br>
+                <span style="color:var(--accent)">K4</span> = 16 bits (X0-X15)
+            </div>
+
+            <div class="switch-hint">
+                (Click switches on canvas to toggle X inputs)
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // State
+        const PLC = {
+            K: 4, // 1, 2, 3, or 4
+            inputs: new Array(16).fill(false), // X0 to X15
+            flowParticles: [] // For animation
+        };
+
+        let W, H;
+
+        // Init
+        function resize() {
+            W = canvas.parentElement.clientWidth;
+            H = canvas.parentElement.clientHeight;
+            canvas.width = W;
+            canvas.height = H;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Interaction
+        function setK(val) {
+            PLC.K = val;
+            // Update buttons
+            document.querySelectorAll('.btn-k').forEach((b, i) => {
+                b.classList.toggle('active', (i + 1) === val);
+            });
+            // Update Desc
+            const desc = ["4 Bits (Nibble)", "8 Bits (Byte)", "12 Bits", "16 Bits (Word)"];
+            document.getElementById('kDesc').innerText = `K${val} = ${desc[val-1]}`;
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Check switch clicks
+            // Switches are drawn at the top. Let's calculate positions same as draw function
+            const margin = W * 0.05;
+            const widthPerSwitch = (W - (2*margin)) / 16;
+            
+            if (y > 50 && y < 120) {
+                const index = Math.floor((x - margin) / widthPerSwitch);
+                if (index >= 0 && index < 16) {
+                    // Only toggle if index is valid for current K factor? 
+                    // No, usually you can toggle them but they won't read into D0 if outside K
+                    // But for visual clarity, let's allow all toggling.
+                    PLC.inputs[index] = !PLC.inputs[index];
+                    
+                    // Spawn particle effect
+                    if (PLC.inputs[index]) {
+                        spawnParticles(index);
+                    }
+                }
+            }
+        });
+
+        function spawnParticles(index) {
+            // Add bits flowing down
+            if (index < PLC.K * 4) {
+                PLC.flowParticles.push({
+                    xIdx: index,
+                    y: 120,
+                    life: 1.0
+                });
+            }
+        }
+
+        // Logic
+        function getD0Value() {
+            let val = 0;
+            const limit = PLC.K * 4; // 4, 8, 12, 16 bits
+            for (let i = 0; i < limit; i++) {
+                if (PLC.inputs[i]) {
+                    val += Math.pow(2, i);
+                }
+            }
+            return val;
+        }
+
+        // Main Loop
+        function update() {
+            // Update Particles
+            for(let i = PLC.flowParticles.length - 1; i >= 0; i--) {
+                let p = PLC.flowParticles[i];
+                p.y += 5; // Move down
+                if(p.y > H * 0.6) { // Reached register
+                    PLC.flowParticles.splice(i, 1);
+                }
+            }
+
+            // Update UI Numbers
+            const d0 = getD0Value();
+            document.getElementById('valDec').innerText = d0;
+            document.getElementById('valHex').innerText = d0.toString(16).toUpperCase() + 'h';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            const margin = W * 0.05;
+            const swW = (W - (2*margin)) / 16;
+            const inputY = 80;
+            const regY = H * 0.65;
+
+            // 1. Draw Input Terminals (X0 - X15)
+            ctx.textAlign = 'center';
+            
+            for(let i=0; i<16; i++) {
+                const cx = margin + (i * swW) + (swW/2);
+                const isActive = PLC.inputs[i];
+                const inRange = i < (PLC.K * 4); // Is this input part of the MOV instruction?
+
+                // Opacity for out of range inputs
+                ctx.globalAlpha = inRange ? 1.0 : 0.2;
+
+                // Wire Line
+                ctx.beginPath();
+                ctx.strokeStyle = isActive ? '#00ff00' : '#333';
+                ctx.lineWidth = 2;
+                ctx.moveTo(cx, inputY + 20); 
+                // Draw path to register bit
+                // Simple straight down for now, maybe complex routing later
+                if (isActive && inRange) {
+                    ctx.lineTo(cx, regY); 
+                } else {
+                    ctx.lineTo(cx, inputY + 40);
+                }
+                ctx.stroke();
+
+                // Switch Body
+                ctx.fillStyle = '#222';
+                ctx.strokeStyle = inRange ? '#888' : '#444';
+                ctx.lineWidth = 2;
+                ctx.fillRect(cx - 10, inputY - 20, 20, 40);
+                ctx.strokeRect(cx - 10, inputY - 20, 20, 40);
+
+                // LED
+                ctx.fillStyle = isActive ? '#00ff00' : '#113311';
+                if(isActive) {
+                    ctx.shadowColor = '#00ff00'; ctx.shadowBlur = 10;
+                }
+                ctx.beginPath(); ctx.arc(cx, inputY - 10, 4, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Toggle Switch Handle
+                ctx.fillStyle = '#ff3333';
+                const toggleY = isActive ? inputY + 10 : inputY + 5;
+                ctx.fillRect(cx - 8, toggleY, 16, 8);
+
+                // Label
+                ctx.fillStyle = inRange ? '#fff' : '#555';
+                ctx.font = "bold 12px sans-serif";
+                ctx.fillText("X" + i.toString(8), cx, inputY - 35); // Octal numbering is common in PLC, but let's stick to decimal or Octal depending on user. Usually X is octal (X0-X7, X10-X17). 
+                // But Delta DVP uses Octal for X/Y. Let's assume linear 0-15 for simplicity unless specified. 
+                // Let's use simple decimal index for clarity here.
+                ctx.fillText("X"+i, cx, inputY - 35);
+
+                ctx.globalAlpha = 1.0;
+            }
+
+            // 2. Draw Grouping Bracket
+            // Draw a bracket showing which inputs are selected by K
+            const rangeWidth = (PLC.K * 4) * swW;
+            ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(margin, inputY - 55);
+            ctx.lineTo(margin, inputY - 65);
+            ctx.lineTo(margin + rangeWidth, inputY - 65);
+            ctx.lineTo(margin + rangeWidth, inputY - 55);
+            ctx.stroke();
+            
+            ctx.fillStyle = '#00e5ff';
+            ctx.fillText(`K${PLC.K} Selection (${PLC.K*4} Bits)`, margin + rangeWidth/2, inputY - 75);
+
+
+            // 3. Draw D0 Register
+            const boxW = swW * 0.8;
+            const boxH = 40;
+            
+            // Register Label
+            ctx.fillStyle = '#ffff00';
+            ctx.font = "bold 20px sans-serif";
+            ctx.textAlign = 'left';
+            ctx.fillText("D0 Register (16-Bit)", margin, regY - 20);
+
+            // Draw Bits
+            ctx.textAlign = 'center';
+            for(let i=0; i<16; i++) {
+                const cx = margin + (i * swW) + (swW/2);
+                
+                // Value is derived from input X[i] if connected
+                const bitVal = (i < PLC.K * 4 && PLC.inputs[i]) ? 1 : 0;
+                
+                // Box
+                ctx.strokeStyle = '#555';
+                ctx.fillStyle = bitVal ? '#004400' : '#111';
+                ctx.lineWidth = 2;
+                ctx.fillRect(cx - boxW/2, regY, boxW, boxH);
+                ctx.strokeRect(cx - boxW/2, regY, boxW, boxH);
+
+                // Bit Value
+                ctx.fillStyle = bitVal ? '#00ff00' : '#333';
+                ctx.font = "bold 18px monospace";
+                ctx.fillText(bitVal, cx, regY + 26);
+
+                // Bit Weight Label (1, 2, 4, 8...)
+                ctx.fillStyle = '#666';
+                ctx.font = "10px sans-serif";
+                ctx.fillText(Math.pow(2, i), cx, regY + boxH + 15);
+            }
+
+            // 4. Draw Flow Particles
+            ctx.fillStyle = '#00ff00';
+            PLC.flowParticles.forEach(p => {
+                const cx = margin + (p.xIdx * swW) + (swW/2);
+                ctx.beginPath();
+                ctx.arc(cx, p.y, 3, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            // 5. Instruction Text Overlay
+            ctx.font = "bold 40px monospace";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            ctx.textAlign = "center";
+            ctx.fillText(`MOV K${PLC.K}X0 D0`, W/2, H/2);
+
+            requestAnimationFrame(() => {
+                update();
+                draw();
+            });
+        }
+
+        // Start
+        update();
+        draw();
+
+    </script>
+</body>
+</html>

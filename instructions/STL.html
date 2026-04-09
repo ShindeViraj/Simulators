@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - STL Visualizer</title>
+    <style>
+        /* --- NEON THEME --- */
+        :root {
+            --bg-body: #0b1120;
+            --bg-panel: #111827;
+            --grid-line: #1f2937;
+            
+            --wire-off: #374151;
+            --wire-on: #22c55e;
+            --active-bus: #06b6d4;
+            
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            
+            --accent-cyan: #06b6d4;
+            --accent-amber: #f59e0b;
+            --accent-purple: #a855f7;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Consolas, monospace;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-transform: uppercase; }
+        .title span { font-size: 0.75rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        /* LADDER VISUALIZER */
+        .program-container {
+            flex: 2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), 
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .ladder-view {
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            position: relative;
+        }
+
+        .main-rail { 
+            position: absolute; left: 20px; top: 0; bottom: 0; width: 4px; 
+            background: #374151; z-index: 1; 
+        }
+        
+        .active-bus-indicator {
+            position: absolute; left: 20px; width: 6px; height: 0;
+            background: var(--active-bus);
+            box-shadow: 0 0 20px var(--active-bus);
+            z-index: 2;
+            transition: top 0.5s ease-in-out, height 0.5s ease-in-out;
+            border-radius: 4px;
+        }
+
+        /* STEPS */
+        .step-block {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 10px;
+            position: relative;
+            padding-left: 20px;
+            opacity: 0.3; /* Default Dimmed */
+            transition: opacity 0.3s;
+            border-left: 2px dashed #374151;
+        }
+        .step-block.active {
+            opacity: 1;
+            border-left-color: var(--active-bus);
+        }
+
+        .step-header {
+            position: absolute;
+            left: -35px; top: 10px;
+            background: #111827;
+            border: 1px solid #4b5563;
+            color: #9ca3af;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            z-index: 10;
+        }
+        .step-block.active .step-header {
+            border-color: var(--active-bus);
+            color: var(--active-bus);
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+        }
+
+        .rung {
+            display: flex; align-items: center; height: 60px; position: relative; padding-left: 10px;
+        }
+
+        /* ELEMENTS */
+        .wire { height: 3px; background: var(--wire-off); flex-grow: 1; transition: background 0.1s; }
+        .wire.active { background: var(--wire-on); box-shadow: 0 0 8px var(--wire-on); }
+        .wire.fixed { flex-grow: 0; width: 30px; }
+
+        .symbol {
+            width: 50px; height: 50px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; margin: 0 5px; cursor: pointer;
+        }
+        .contact-draw { 
+            width: 20px; height: 30px; 
+            border-left: 3px solid var(--wire-off); 
+            border-right: 3px solid var(--wire-off); 
+            position: relative; transition: border-color 0.2s;
+        }
+        .symbol.active .contact-draw { border-color: var(--wire-on); }
+        .contact-label { position: absolute; top: -12px; font-size: 0.7rem; color: var(--text-muted); font-weight: bold; white-space: nowrap; }
+        .symbol.active .contact-label { color: var(--wire-on); }
+
+        .instruction-box {
+            border: 2px solid var(--wire-off); color: var(--text-muted); 
+            padding: 5px 10px; font-family: 'Consolas', monospace; font-weight: bold; font-size: 0.8rem;
+            min-width: 80px; text-align: center; background: #0b1120; 
+            position: relative; z-index: 2; border-radius: 4px;
+        }
+        .instruction-box.set { border-color: var(--accent-amber); color: var(--accent-amber); }
+        .instruction-box.ret { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .instruction-box.executing { background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 10px currentColor; }
+
+        .coil-draw { 
+            width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--wire-off);
+            display: flex; align-items: center; justify-content: center; color: var(--wire-off); font-weight: bold;
+        }
+        .coil-draw.active { border-color: var(--wire-on); color: var(--wire-on); box-shadow: 0 0 10px var(--wire-on); }
+
+        /* DASHBOARD */
+        .data-panel {
+            flex: 1.2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .panel-header { 
+            color: #fff; font-weight: bold; 
+            border-bottom: 1px solid var(--grid-line); padding-bottom: 5px; margin-bottom: 5px; 
+            font-size: 0.85rem; text-transform: uppercase;
+        }
+
+        .state-grid { display: flex; gap: 10px; justify-content: space-around; background: #1f2937; padding: 10px; border-radius: 6px; }
+        .state-badge {
+            padding: 5px 15px; border-radius: 4px; border: 1px solid #4b5563; color: #6b7280; font-weight: bold; font-size: 0.9rem;
+            transition: all 0.3s; text-align: center; width: 100%; opacity: 0.5;
+        }
+        .state-badge.active {
+            background: var(--active-bus); color: black; border-color: white; box-shadow: 0 0 15px var(--active-bus); transform: scale(1.05); opacity: 1;
+        }
+
+        .explanation-box {
+            background: rgba(6, 182, 212, 0.1); border: 1px solid var(--accent-cyan);
+            border-radius: 6px; padding: 15px; font-size: 0.8rem; color: #e5e7eb; line-height: 1.5;
+        }
+        .explanation-box strong { color: var(--accent-cyan); }
+
+        .switch-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #1f2937; padding: 10px; border-radius: 6px; border: 1px solid #374151; cursor: pointer; transition: 0.2s;
+        }
+        .switch-row.active { background: rgba(34, 197, 94, 0.1); border-color: var(--wire-on); }
+        .switch-indicator { width: 36px; height: 18px; background: #374151; border-radius: 12px; position: relative; transition: 0.3s; }
+        .switch-row.active .switch-indicator { background: var(--wire-on); box-shadow: 0 0 8px var(--wire-on); }
+        .switch-indicator::after { content:''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; background: white; border-radius: 50%; transition: 0.3s; }
+        .switch-row.active .switch-indicator::after { left: 20px; }
+
+        /* Init Switch Style */
+        .switch-row.init { border-color: var(--accent-amber); }
+        .switch-row.init.active { background: rgba(245, 158, 11, 0.1); border-color: var(--accent-amber); }
+        .switch-row.init.active .switch-indicator { background: var(--accent-amber); box-shadow: 0 0 8px var(--accent-amber); }
+
+        .led-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #374151; }
+        .led { width: 12px; height: 12px; border-radius: 50%; background: #374151; border: 1px solid #6b7280; transition: 0.2s; }
+        .led.on { background: var(--wire-on); box-shadow: 0 0 10px var(--wire-on); border-color: white; }
+
+        .narrative-box {
+            background: rgba(0,0,0,0.3); border: 1px solid var(--active-bus);
+            padding: 10px; border-radius: 4px; font-size: 0.8rem; color: #fff; min-height: 40px;
+            display: flex; align-items: center;
+        }
+
+        .footer {
+            margin-top: 10px; padding: 10px; background-color: var(--bg-panel); border-radius: 8px; border: 1px solid var(--grid-line);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+        button { padding: 8px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; font-size: 0.8rem; }
+        .btn-reset { background: #374151; color: white; } .btn-reset:hover { background: #4b5563; }
+        input[type=range] { width: 120px; accent-color: var(--accent-cyan); }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>STL VISUALIZER | STEP LADDER LOGIC</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="program-container">
+            <div class="main-rail"></div>
+            <div id="bus-indicator" class="active-bus-indicator"></div>
+
+            <div class="ladder-view">
+                
+                <div class="rung" id="rung-init">
+                    <div class="wire fixed active"></div> <div class="symbol" id="sym-x10" onclick="toggleInput('x10')">
+                        <div class="contact-label">X10 (Start Sys)</div>
+                        <div class="contact-draw" style="border-color:var(--accent-amber);"></div>
+                    </div>
+                    <div class="wire" id="w-init-mid"></div>
+                    <div class="instruction-box set" id="inst-set-s0">SET S0</div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div id="step-s0" class="step-block">
+                    <div class="step-header">STL S0 (Idle)</div>
+                    
+                    <div class="rung">
+                        <div class="wire fixed" id="w-s0-feed"></div>
+                        <div class="symbol" id="sym-x0" onclick="toggleInput('x0')">
+                            <div class="contact-label">X0 (Start Cycle)</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="w-s0-mid"></div>
+                        <div class="instruction-box set" id="inst-set-s20">SET S20</div>
+                        <div class="wire fixed active"></div>
+                    </div>
+                </div>
+
+                <div id="step-s20" class="step-block">
+                    <div class="step-header">STL S20 (Process 1)</div>
+                    
+                    <div class="rung">
+                        <div class="wire fixed" id="w-s20-feed1"></div>
+                        <div class="wire" id="w-s20-out"></div>
+                        <div class="coil-draw" id="coil-y0">Y0</div>
+                        <div class="wire fixed" id="w-s20-end"></div>
+                    </div>
+                    <div class="rung">
+                        <div class="wire fixed" id="w-s20-feed2"></div>
+                        <div class="symbol" id="sym-x1" onclick="toggleInput('x1')">
+                            <div class="contact-label">X1 (Next)</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="w-s20-mid"></div>
+                        <div class="instruction-box set" id="inst-set-s21">SET S21</div>
+                        <div class="wire fixed active"></div>
+                    </div>
+                </div>
+
+                <div id="step-s21" class="step-block">
+                    <div class="step-header">STL S21 (Process 2)</div>
+                    
+                    <div class="rung">
+                        <div class="wire fixed" id="w-s21-feed1"></div>
+                        <div class="wire" id="w-s21-out"></div>
+                        <div class="coil-draw" id="coil-y1">Y1</div>
+                        <div class="wire fixed" id="w-s21-end"></div>
+                    </div>
+                    <div class="rung">
+                        <div class="wire fixed" id="w-s21-feed2"></div>
+                        <div class="symbol" id="sym-x2" onclick="toggleInput('x2')">
+                            <div class="contact-label">X2 (Loop S0)</div>
+                            <div class="contact-draw"></div>
+                        </div>
+                        <div class="wire" id="w-s21-mid"></div>
+                        <div class="instruction-box set" id="inst-set-s0-loop">SET S0</div>
+                        <div class="wire fixed active"></div>
+                    </div>
+                </div>
+
+                <div class="rung">
+                    <div class="wire fixed active"></div>
+                    <div class="wire active"></div>
+                    <div class="instruction-box ret">RET</div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="data-panel">
+            <div class="panel-header">Active Step Monitor</div>
+            <div class="state-grid">
+                <div id="badge-s0" class="state-badge">S0<br><span style="font-size:0.6rem">IDLE</span></div>
+                <div id="badge-s20" class="state-badge">S20<br><span style="font-size:0.6rem">PROC 1</span></div>
+                <div id="badge-s21" class="state-badge">S21<br><span style="font-size:0.6rem">PROC 2</span></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">STL Logic Explained</div>
+            <div class="explanation-box">
+                <strong>Sequential Control:</strong> STL handles processes step-by-step.<br><br>
+                <strong>The "Bus" Transfer:</strong>
+                <ul>
+                    <li>When <strong>S0</strong> is active, only S0 logic runs.</li>
+                    <li>When you <strong>SET S20</strong>, the CPU turns <strong>OFF S0</strong> automatically and transfers control to S20.</li>
+                </ul>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Manual Inputs</div>
+            
+            <div class="switch-row init" id="sw-x10" onclick="toggleInput('x10')">
+                <span style="font-size:0.85rem; color:#fff;">X10 (Set S0 - Init)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            
+            <div class="switch-row" id="sw-x0" onclick="toggleInput('x0')">
+                <span style="font-size:0.85rem; color:#fff;">X0 (S0 -> S20)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x1" onclick="toggleInput('x1')">
+                <span style="font-size:0.85rem; color:#fff;">X1 (S20 -> S21)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x2" onclick="toggleInput('x2')">
+                <span style="font-size:0.85rem; color:#fff;">X2 (S21 -> S0)</span>
+                <div class="switch-indicator"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Outputs</div>
+            <div class="led-row">
+                <span style="color:#9ca3af; font-size:0.85rem;">Y0 (Active in S20)</span>
+                <div class="led" id="led-y0"></div>
+            </div>
+            <div class="led-row">
+                <span style="color:#9ca3af; font-size:0.85rem;">Y1 (Active in S21)</span>
+                <div class="led" id="led-y1"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Live Status</div>
+            <div id="narrative" class="narrative-box">
+                System OFF. Press X10 to Initialize S0.
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:0.8rem; color:#9ca3af;">Scan Speed:</span>
+            <input type="range" id="sim-speed" min="100" max="2000" value="800">
+        </div>
+        <button class="btn-reset" onclick="resetSim()">RESET SYSTEM</button>
+    </div>
+
+    <script>
+        // STATE
+        let activeState = -1; // -1 = System OFF, 0=S0, 20=S20, 21=S21
+        let inputs = { x10: false, x0: false, x1: false, x2: false };
+        let transitionSpeed = 800; // ms
+        
+        // DOM ELEMENTS
+        const els = {
+            // Steps UI
+            blkS0: document.getElementById('step-s0'),
+            blkS20: document.getElementById('step-s20'),
+            blkS21: document.getElementById('step-s21'),
+            
+            // Badges
+            bgS0: document.getElementById('badge-s0'),
+            bgS20: document.getElementById('badge-s20'),
+            bgS21: document.getElementById('badge-s21'),
+            
+            // INIT Wire
+            wInitMid: document.getElementById('w-init-mid'), instS0Init: document.getElementById('inst-set-s0'),
+            swX10: document.getElementById('sw-x10'), symX10: document.getElementById('sym-x10'),
+
+            // Wires - S0
+            ws0Feed: document.getElementById('w-s0-feed'), ws0Mid: document.getElementById('w-s0-mid'),
+            instS20: document.getElementById('inst-set-s20'),
+            symX0: document.getElementById('sym-x0'), swX0: document.getElementById('sw-x0'),
+
+            // Wires - S20
+            ws20Feed1: document.getElementById('w-s20-feed1'), ws20Out: document.getElementById('w-s20-out'), ws20End: document.getElementById('w-s20-end'), coilY0: document.getElementById('coil-y0'),
+            ws20Feed2: document.getElementById('w-s20-feed2'), ws20Mid: document.getElementById('w-s20-mid'), instS21: document.getElementById('inst-set-s21'),
+            symX1: document.getElementById('sym-x1'), swX1: document.getElementById('sw-x1'), ledY0: document.getElementById('led-y0'),
+
+            // Wires - S21
+            ws21Feed1: document.getElementById('w-s21-feed1'), ws21Out: document.getElementById('w-s21-out'), ws21End: document.getElementById('w-s21-end'), coilY1: document.getElementById('coil-y1'),
+            ws21Feed2: document.getElementById('w-s21-feed2'), ws21Mid: document.getElementById('w-s21-mid'), instS0Loop: document.getElementById('inst-set-s0-loop'),
+            symX2: document.getElementById('sym-x2'), swX2: document.getElementById('sw-x2'), ledY1: document.getElementById('led-y1'),
+
+            // Global
+            busInd: document.getElementById('bus-indicator'),
+            narrative: document.getElementById('narrative'),
+            speedSlider: document.getElementById('sim-speed')
+        };
+
+        // SPEED CONTROL
+        els.speedSlider.oninput = function() {
+            transitionSpeed = parseInt(this.value);
+            els.busInd.style.transition = `top ${transitionSpeed/1000}s ease-in-out, height ${transitionSpeed/1000}s ease-in-out`;
+        };
+
+        function toggleInput(id) {
+            inputs[id] = !inputs[id];
+            
+            // Toggle Switch Visuals
+            let sw = els['sw' + id.toUpperCase()];
+            let sym = els['sym' + id.toUpperCase()];
+            
+            if(inputs[id]) {
+                sw.classList.add('active');
+                sym.classList.add('active');
+            } else {
+                sw.classList.remove('active');
+                sym.classList.remove('active');
+            }
+
+            runLogic();
+        }
+
+        async function runLogic() {
+            
+            // --- SYSTEM INIT (RUNG 0) ---
+            // This is always scanned (Main Bus)
+            if(inputs.x10) {
+                setWire(els.wInitMid, true);
+                els.instS0Init.classList.add('executing');
+                // Force Transition to S0 regardless of current state
+                if(activeState !== 0) {
+                    await transition(0);
+                }
+            } else {
+                setWire(els.wInitMid, false);
+                els.instS0Init.classList.remove('executing');
+            }
+
+            // If system is off (-1), stop here
+            if (activeState === -1) return;
+
+            // --- S0 LOGIC ---
+            if (activeState === 0) {
+                setWire(els.ws0Feed, true);
+                if (inputs.x0) {
+                    setWire(els.ws0Mid, true);
+                    els.instS20.classList.add('executing');
+                    await transition(20);
+                    setWire(els.ws0Mid, false);
+                    els.instS20.classList.remove('executing');
+                } else {
+                    setWire(els.ws0Mid, false);
+                }
+            } else {
+                setWire(els.ws0Feed, false);
+            }
+
+            // --- S20 LOGIC ---
+            if (activeState === 20) {
+                setWire(els.ws20Feed1, true); setWire(els.ws20Feed2, true);
+                // Y0 Logic
+                setWire(els.ws20Out, true); setWire(els.ws20End, true);
+                els.coilY0.classList.add('active'); els.ledY0.classList.add('on');
+                // Next Step
+                if(inputs.x1) {
+                    setWire(els.ws20Mid, true);
+                    els.instS21.classList.add('executing');
+                    await transition(21);
+                    setWire(els.ws20Mid, false);
+                    els.instS21.classList.remove('executing');
+                } else {
+                    setWire(els.ws20Mid, false);
+                }
+            } else {
+                // Clear Visuals
+                setWire(els.ws20Feed1, false); setWire(els.ws20Feed2, false);
+                setWire(els.ws20Out, false); setWire(els.ws20End, false);
+                els.coilY0.classList.remove('active'); els.ledY0.classList.remove('on');
+            }
+
+            // --- S21 LOGIC ---
+            if (activeState === 21) {
+                setWire(els.ws21Feed1, true); setWire(els.ws21Feed2, true);
+                // Y1 Logic
+                setWire(els.ws21Out, true); setWire(els.ws21End, true);
+                els.coilY1.classList.add('active'); els.ledY1.classList.add('on');
+                // Loop Back
+                if(inputs.x2) {
+                    setWire(els.ws21Mid, true);
+                    els.instS0Loop.classList.add('executing');
+                    await transition(0);
+                    setWire(els.ws21Mid, false);
+                    els.instS0Loop.classList.remove('executing');
+                } else {
+                    setWire(els.ws21Mid, false);
+                }
+            } else {
+                setWire(els.ws21Feed1, false); setWire(els.ws21Feed2, false);
+                setWire(els.ws21Out, false); setWire(els.ws21End, false);
+                els.coilY1.classList.remove('active'); els.ledY1.classList.remove('on');
+            }
+        }
+
+        async function transition(newState) {
+            // Pause for visual effect
+            await new Promise(r => setTimeout(r, 200));
+            
+            // 1. Deactivate Old Visuals
+            document.querySelectorAll('.step-block').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.state-badge').forEach(el => el.classList.remove('active'));
+            
+            // 2. Set State
+            activeState = newState;
+            
+            let blockId = (newState === 0) ? 'blkS0' : (newState === 20 ? 'blkS20' : 'blkS21');
+            let badgeId = (newState === 0) ? 'bgS0' : (newState === 20 ? 'bgS20' : 'bgS21');
+            
+            els[blockId].classList.add('active');
+            els[badgeId].classList.add('active');
+
+            // 3. Move Bus Indicator
+            let target = els[blockId];
+            els.busInd.style.top = target.offsetTop + "px";
+            els.busInd.style.height = target.offsetHeight + "px";
+
+            // 4. Update Narrative
+            if(newState === 0) els.narrative.innerText = "State S0 Active. System Idle. Waiting for X0.";
+            if(newState === 20) els.narrative.innerText = "State S20 Active. Y0 is ON. Waiting for X1.";
+            if(newState === 21) els.narrative.innerText = "State S21 Active. Y1 is ON. Waiting for X2 to Reset.";
+
+            // Re-run logic to ensure outputs update immediately
+            runLogic();
+        }
+
+        function setWire(el, on) {
+            if(on) el.classList.add('active'); else el.classList.remove('active');
+        }
+
+        function resetSim() {
+            inputs = { x10: false, x0: false, x1: false, x2: false };
+            ['x10','x0','x1','x2'].forEach(k => {
+                els['sw'+k.toUpperCase()].classList.remove('active');
+                els['sym'+k.toUpperCase()].classList.remove('active');
+            });
+            
+            // Reset to State -1 (OFF) visually, or 0 if we want soft reset
+            // Let's do a hard visual reset
+            activeState = -1;
+            document.querySelectorAll('.step-block').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.state-badge').forEach(el => el.classList.remove('active'));
+            els.busInd.style.height = "0px";
+            els.narrative.innerText = "System OFF. Press X10 to Initialize S0.";
+            
+            // Clear wires
+            setWire(els.wInitMid, false);
+            // ... clear other specific wires if needed, but logic check handles them
+            runLogic();
+        }
+
+    </script>
+</body>
+</html>

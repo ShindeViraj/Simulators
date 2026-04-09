@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squarewave - JMP/LBL Scan Visualizer</title>
+    <style>
+        /* --- NEON THEME --- */
+        :root {
+            --bg-body: #0b1120;
+            --bg-panel: #111827;
+            --grid-line: #1f2937;
+            
+            --wire-off: #374151;
+            --wire-on: #22c55e;
+            --wire-frozen: #ef4444;
+            --jump-arc: #06b6d4;
+            --scan-cursor: #3b82f6; /* Blue for Scan Line */
+            
+            --text-main: #ffffff;
+            --text-muted: #9ca3af;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Consolas, monospace;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* HEADER */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-panel);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--grid-line);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .title h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-transform: uppercase; font-weight: bold; }
+        .title span { font-size: 0.75rem; color: var(--jump-arc); font-weight: bold; }
+
+        /* STAGE */
+        .stage {
+            flex: 1;
+            display: flex;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        /* LEFT: LADDER VISUALIZER */
+        .program-container {
+            flex: 2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), 
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .ladder-view {
+            padding: 40px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+        }
+
+        /* SCAN CURSOR */
+        .scan-line {
+            position: absolute; left: 0; right: 0; height: 2px;
+            background: var(--scan-cursor);
+            box-shadow: 0 0 15px var(--scan-cursor);
+            z-index: 20;
+            pointer-events: none;
+            display: none; /* Hidden until Start */
+            transition: top 0.1s linear; /* Smooth movement */
+        }
+        .scan-line::before {
+            content: 'SCAN CYCLE';
+            position: absolute; right: 10px; top: -20px;
+            font-size: 0.7rem; color: var(--scan-cursor); font-weight: bold;
+            background: rgba(0,0,0,0.8); padding: 2px 5px; border-radius: 4px;
+        }
+
+        /* RAILS */
+        .rail { position: absolute; width: 4px; background: #374151; top: 0; bottom: 0; z-index: 1; }
+        .rail.left { left: 20px; background: var(--wire-on); box-shadow: 0 0 10px var(--wire-on); }
+        .rail.right { right: 20px; }
+
+        /* RUNGS */
+        .rung {
+            display: flex; align-items: center; height: 60px; position: relative; padding-left: 20px; transition: opacity 0.3s;
+        }
+        .rung.skipped { opacity: 0.3; filter: grayscale(100%); }
+        .rung.skipped::after {
+            content: 'SKIPPED';
+            position: absolute; left: 50%; top: 50%;
+            color: var(--wire-frozen); font-weight: bold; font-size: 1.2rem;
+            text-shadow: 0 0 5px black; border: 2px solid var(--wire-frozen); padding: 5px 10px;
+            transform: translate(-50%, -50%) rotate(-5deg); z-index: 10;
+        }
+
+        /* JUMP ARC VISUAL */
+        .jump-path {
+            position: absolute; left: 200px; top: 70px; width: 40px; height: 160px;
+            border-right: 4px dashed var(--jump-arc);
+            border-top: 4px dashed var(--jump-arc);
+            border-bottom: 4px dashed var(--jump-arc);
+            border-radius: 0 20px 20px 0; z-index: 5;
+            display: none; pointer-events: none;
+        }
+        .jump-path.active { display: block; animation: dash 1s linear infinite; }
+        @keyframes dash { from { border-style: dashed; opacity: 0.5; } to { border-style: dashed; opacity: 1; } }
+
+        /* ELEMENTS */
+        .wire { height: 3px; background: var(--wire-off); flex-grow: 1; transition: background 0.1s; }
+        .wire.active { background: var(--wire-on); box-shadow: 0 0 8px var(--wire-on); }
+        .wire.frozen-on { background: var(--wire-frozen); box-shadow: 0 0 8px var(--wire-frozen); }
+        .wire.fixed { flex-grow: 0; width: 40px; }
+
+        .symbol {
+            width: 50px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; margin: 0 10px; cursor: pointer;
+        }
+        .contact-draw { width: 20px; height: 30px; border-left: 3px solid var(--wire-off); border-right: 3px solid var(--wire-off); position: relative; transition: border-color 0.2s; }
+        .symbol.active .contact-draw { border-color: var(--wire-on); }
+        .contact-label { position: absolute; top: -12px; font-size: 0.7rem; color: var(--text-muted); font-weight: bold; white-space: nowrap; }
+        .symbol.active .contact-label { color: var(--wire-on); }
+
+        .instruction-box {
+            border: 2px solid var(--wire-off); color: var(--text-muted); padding: 8px 15px; font-family: 'Consolas', monospace; font-weight: bold; font-size: 0.9rem;
+            min-width: 80px; text-align: center; background: #0b1120; position: relative; z-index: 2; border-radius: 4px;
+        }
+        .instruction-box.jmp { border-color: var(--jump-arc); color: var(--jump-arc); }
+        .instruction-box.executing { background: rgba(6, 182, 212, 0.2); box-shadow: 0 0 10px var(--jump-arc); }
+
+        .coil-draw { 
+            width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--wire-off);
+            display: flex; align-items: center; justify-content: center; color: var(--wire-off); font-weight: bold;
+        }
+        .coil-draw.active { border-color: var(--wire-on); color: var(--wire-on); box-shadow: 0 0 10px var(--wire-on); }
+        .coil-draw.frozen-on { border-color: var(--wire-frozen); color: var(--wire-frozen); box-shadow: 0 0 10px var(--wire-frozen); background: rgba(239, 68, 68, 0.2); }
+
+        /* RIGHT: INTERACTIVE PANEL */
+        .data-panel {
+            flex: 1.2;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--grid-line);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-header { color: #fff; font-weight: bold; border-bottom: 1px solid var(--grid-line); padding-bottom: 5px; margin-bottom: 10px; font-size: 0.85rem; text-transform: uppercase; }
+
+        .explanation-box { background: rgba(6, 182, 212, 0.1); border: 1px solid var(--jump-arc); border-radius: 6px; padding: 15px; font-size: 0.8rem; color: #e5e7eb; line-height: 1.5; }
+        .explanation-box strong { color: var(--jump-arc); }
+
+        .switch-row { display: flex; justify-content: space-between; align-items: center; background: #1f2937; padding: 10px; border-radius: 6px; border: 1px solid #374151; cursor: pointer; transition: 0.2s; }
+        .switch-row.active { background: rgba(34, 197, 94, 0.1); border-color: var(--wire-on); }
+        .switch-indicator { width: 36px; height: 18px; background: #374151; border-radius: 12px; position: relative; transition: 0.3s; }
+        .switch-row.active .switch-indicator { background: var(--wire-on); box-shadow: 0 0 8px var(--wire-on); }
+        .switch-indicator::after { content:''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; background: white; border-radius: 50%; transition: 0.3s; }
+        .switch-row.active .switch-indicator::after { left: 20px; }
+        
+        .switch-row.jump-ctrl { border-color: var(--jump-arc); }
+        .switch-row.jump-ctrl.active { background: rgba(6, 182, 212, 0.1); }
+        .switch-row.jump-ctrl.active .switch-indicator { background: var(--jump-arc); box-shadow: 0 0 8px var(--jump-arc); }
+
+        .narrative-box { background: rgba(0,0,0,0.3); border: 1px solid var(--wire-off); padding: 10px; border-radius: 4px; font-size: 0.8rem; color: #fff; min-height: 40px; display: flex; align-items: center; }
+
+        /* FOOTER CONTROLS */
+        .footer {
+            margin-top: 15px; padding: 15px; background-color: var(--bg-panel); border-radius: 8px; border: 1px solid var(--grid-line);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 15px;
+        }
+        
+        .control-group { display: flex; align-items: center; gap: 10px; }
+        input[type=range] { width: 100px; accent-color: var(--scan-cursor); }
+
+        button { padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; letter-spacing: 1px; font-size: 0.8rem; }
+        .btn-start { background: var(--wire-on); color: black; }
+        .btn-stop { background: var(--wire-frozen); color: white; }
+        .btn-reset { background: #374151; color: white; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="title">
+            <h1>SQUAREWAVE AUTOMATION TECHNOLOGIES PVT. LTD.</h1>
+            <span>PROGRAM FLOW CONTROL | JMP & LBL</span>
+        </div>
+    </div>
+
+    <div class="stage">
+        
+        <div class="program-container">
+            <div class="rail left"></div>
+            <div id="jump-viz" class="jump-path"></div>
+            
+            <div id="scan-cursor" class="scan-line"></div>
+
+            <div class="ladder-view">
+                
+                <div class="rung" id="rung-0">
+                    <div class="wire fixed active"></div>
+                    <div class="symbol" id="sym-x0" onclick="toggleInput('x0')">
+                        <div class="contact-label">X0 (Enable Jump)</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-jmp-in"></div>
+                    <div class="instruction-box jmp" id="inst-jmp">CJ P0</div>
+                    <div class="wire fixed active"></div>
+                </div>
+
+                <div class="rung" id="rung-1">
+                    <div class="wire fixed active"></div>
+                    <div class="symbol" id="sym-x1" onclick="toggleInput('x1')">
+                        <div class="contact-label">X1</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-r1"></div>
+                    <div class="coil-draw" id="coil-y0">Y0</div>
+                    <div class="wire fixed" id="w-r1-end"></div>
+                </div>
+
+                <div class="rung" id="rung-2">
+                    <div class="wire fixed active"></div>
+                    <div class="symbol" id="sym-x2" onclick="toggleInput('x2')">
+                        <div class="contact-label">X2</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-r2"></div>
+                    <div class="coil-draw" id="coil-y1">Y1</div>
+                    <div class="wire fixed" id="w-r2-end"></div>
+                </div>
+
+                <div class="rung" id="rung-3">
+                    <div style="position:absolute; left:-10px; color:white; font-weight:bold; font-size:0.8rem; background:#333; padding:2px 5px; border-radius:4px; z-index:10; border:1px dotted var(--jump-arc);">P0</div>
+                    <div class="wire fixed active"></div>
+                    <div class="symbol" id="sym-x3" onclick="toggleInput('x3')">
+                        <div class="contact-label">X3 (Normal)</div>
+                        <div class="contact-draw"></div>
+                    </div>
+                    <div class="wire" id="w-r3"></div>
+                    <div class="coil-draw" id="coil-y2">Y2</div>
+                    <div class="wire fixed" id="w-r3-end"></div>
+                </div>
+
+            </div>
+            <div class="rail right"></div>
+        </div>
+
+        <div class="data-panel">
+            <div class="panel-header">Scan Analysis</div>
+            <div class="explanation-box">
+                <strong>Visualizing Scan Cycle:</strong><br>
+                When <strong>X0 is ON</strong>, watch the blue scan bar <strong>SKIP</strong> the middle rungs entirely. This creates the "Frozen Logic" condition.
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Manual Inputs</div>
+            <div class="switch-row jump-ctrl" id="sw-x0" onclick="toggleInput('x0')">
+                <span style="font-size:0.85rem; color:#fff;">X0 (Jump Enable)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x1" onclick="toggleInput('x1')">
+                <span style="font-size:0.85rem; color:#fff;">X1 (Control Y0)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x2" onclick="toggleInput('x2')">
+                <span style="font-size:0.85rem; color:#fff;">X2 (Control Y1)</span>
+                <div class="switch-indicator"></div>
+            </div>
+            <div class="switch-row" id="sw-x3" onclick="toggleInput('x3')">
+                <span style="font-size:0.85rem; color:#fff;">X3 (Control Y2)</span>
+                <div class="switch-indicator"></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:20px;">Live Status</div>
+            <div id="narrative" class="narrative-box">
+                System Ready. Press 'Start Scan' to visualize flow.
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer">
+        <div class="control-group">
+            <button class="btn-start" onclick="startScanAnim()">START SCAN</button>
+            <button class="btn-stop" onclick="stopScanAnim()">STOP SCAN</button>
+        </div>
+        <div class="control-group">
+            <span style="color:#9ca3af; font-size:0.8rem;">Scan Speed:</span>
+            <input type="range" id="scan-speed" min="100" max="2000" value="800">
+        </div>
+        <button class="btn-reset" onclick="resetSim()">RESET</button>
+    </div>
+
+    <script>
+        // STATE
+        let inputs = { x0: false, x1: false, x2: false, x3: false };
+        let outputs = { y0: false, y1: false, y2: false };
+        let isScanning = false;
+        let scanSpeed = 800; // ms
+        let scanStep = 0; // 0=Top, 1=R1, 2=R2, 3=R3
+        
+        // DOM Elements
+        const els = {
+            scanCursor: document.getElementById('scan-cursor'),
+            rungs: [
+                document.getElementById('rung-0'),
+                document.getElementById('rung-1'),
+                document.getElementById('rung-2'),
+                document.getElementById('rung-3')
+            ],
+            // Jump
+            jmpViz: document.getElementById('jump-viz'),
+            instJmp: document.getElementById('inst-jmp'),
+            wJmpIn: document.getElementById('w-jmp-in'),
+            // Wires & Coils
+            wR1: document.getElementById('w-r1'), wR1End: document.getElementById('w-r1-end'), coilY0: document.getElementById('coil-y0'),
+            wR2: document.getElementById('w-r2'), wR2End: document.getElementById('w-r2-end'), coilY1: document.getElementById('coil-y1'),
+            wR3: document.getElementById('w-r3'), wR3End: document.getElementById('w-r3-end'), coilY2: document.getElementById('coil-y2'),
+            narrative: document.getElementById('narrative'),
+            speedSlider: document.getElementById('scan-speed')
+        };
+
+        // --- SCAN ANIMATION LOGIC ---
+        
+        els.speedSlider.oninput = function() {
+            scanSpeed = parseInt(this.value);
+            // Update CSS transition for smoothness
+            els.scanCursor.style.transition = `top ${scanSpeed * 0.8}ms linear`;
+        };
+
+        function startScanAnim() {
+            if(isScanning) return;
+            isScanning = true;
+            els.scanCursor.style.display = 'block';
+            els.scanCursor.style.transition = `top ${scanSpeed * 0.8}ms linear`;
+            runScanLoop();
+        }
+
+        function stopScanAnim() {
+            isScanning = false;
+            els.scanCursor.style.display = 'none';
+        }
+
+        async function runScanLoop() {
+            while(isScanning) {
+                // Step 0: Rung 0
+                moveCursorToRung(0);
+                await wait(scanSpeed);
+                if(!isScanning) break;
+
+                // Check Jump Condition
+                if(inputs.x0) {
+                    // JUMP ACTIVE: Skip R1 & R2
+                    // Visual Jump (Fast transition over skipped area)
+                    moveCursorToRung(3); 
+                    // Optional: Maybe animate the arc here? 
+                    // The CSS arc is already visible if X0 is ON.
+                } else {
+                    // JUMP INACTIVE: Linear Scan
+                    moveCursorToRung(1);
+                    await wait(scanSpeed);
+                    if(!isScanning) break;
+
+                    moveCursorToRung(2);
+                    await wait(scanSpeed);
+                    if(!isScanning) break;
+
+                    moveCursorToRung(3);
+                }
+                
+                await wait(scanSpeed);
+            }
+        }
+
+        function moveCursorToRung(idx) {
+            let r = els.rungs[idx];
+            // Align cursor with middle of rung
+            let top = r.offsetTop + (r.offsetHeight / 2) - 1; 
+            els.scanCursor.style.top = top + "px";
+        }
+
+        function wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // --- EXISTING LOGIC ENGINE ---
+
+        function toggleInput(id) {
+            inputs[id] = !inputs[id];
+            
+            let sw = document.getElementById('sw-'+id);
+            let sym = document.getElementById('sym-'+id);
+            
+            if(inputs[id]) {
+                sw.classList.add('active');
+                sym.classList.add('active');
+            } else {
+                sw.classList.remove('active');
+                sym.classList.remove('active');
+            }
+
+            runLogic();
+        }
+
+        function runLogic() {
+            let jumpActive = inputs.x0;
+            
+            if (jumpActive) {
+                // VISUALS: Jump Active
+                els.wJmpIn.classList.add('active');
+                els.instJmp.classList.add('executing');
+                els.jmpViz.classList.add('active');
+                els.rungs[1].classList.add('skipped');
+                els.rungs[2].classList.add('skipped');
+                
+                els.narrative.innerText = "JUMP ACTIVE! Rungs 1 & 2 are SKIPPED. Outputs Frozen.";
+                els.narrative.style.borderColor = "var(--wire-frozen)";
+                els.narrative.style.color = "var(--wire-frozen)";
+
+                // FREEZE: Do not update outputs.y0/y1 logic
+                updateFrozenVisuals();
+
+            } else {
+                // VISUALS: Normal Scan
+                els.wJmpIn.classList.remove('active');
+                els.instJmp.classList.remove('executing');
+                els.jmpViz.classList.remove('active');
+                els.rungs[1].classList.remove('skipped');
+                els.rungs[2].classList.remove('skipped');
+                
+                els.narrative.innerText = "Normal Scan. All logic executing.";
+                els.narrative.style.borderColor = "var(--wire-on)";
+                els.narrative.style.color = "white";
+
+                // LOGIC: Update outputs
+                outputs.y0 = inputs.x1;
+                outputs.y1 = inputs.x2;
+                
+                updateNormalVisuals();
+            }
+
+            // Always Process Rung 3
+            outputs.y2 = inputs.x3;
+            if(outputs.y2) {
+                els.wR3.classList.add('active');
+                els.coilY2.classList.add('active');
+                els.wR3End.classList.add('active');
+            } else {
+                els.wR3.classList.remove('active');
+                els.coilY2.classList.remove('active');
+                els.wR3End.classList.remove('active');
+            }
+        }
+
+        function updateNormalVisuals() {
+            // Y0
+            if(outputs.y0) {
+                els.wR1.classList.add('active');
+                els.coilY0.classList.add('active');
+                els.wR1End.classList.add('active');
+                els.coilY0.classList.remove('frozen-on');
+            } else {
+                els.wR1.classList.remove('active');
+                els.coilY0.classList.remove('active');
+                els.wR1End.classList.remove('active');
+            }
+            // Y1
+            if(outputs.y1) {
+                els.wR2.classList.add('active');
+                els.coilY1.classList.add('active');
+                els.wR2End.classList.add('active');
+                els.coilY1.classList.remove('frozen-on');
+            } else {
+                els.wR2.classList.remove('active');
+                els.coilY1.classList.remove('active');
+                els.wR2End.classList.remove('active');
+            }
+        }
+
+        function updateFrozenVisuals() {
+            els.wR1.classList.remove('active'); // Input logic dead
+            els.wR2.classList.remove('active');
+            
+            // Y0 Frozen
+            if(outputs.y0) {
+                els.coilY0.classList.add('frozen-on');
+                els.wR1End.classList.add('frozen-on');
+            } else {
+                els.coilY0.classList.remove('active');
+                els.wR1End.classList.remove('active');
+            }
+            // Y1 Frozen
+            if(outputs.y1) {
+                els.coilY1.classList.add('frozen-on');
+                els.wR2End.classList.add('frozen-on');
+            } else {
+                els.coilY1.classList.remove('active');
+                els.wR2End.classList.remove('active');
+            }
+        }
+
+        function resetSim() {
+            stopScanAnim();
+            inputs = { x0: false, x1: false, x2: false, x3: false };
+            outputs = { y0: false, y1: false, y2: false };
+            
+            ['x0','x1','x2','x3'].forEach(k => {
+                document.getElementById('sw-'+k).classList.remove('active');
+                document.getElementById('sym-'+k).classList.remove('active');
+            });
+            
+            els.coilY0.classList.remove('frozen-on');
+            els.coilY1.classList.remove('frozen-on');
+            els.wR1End.classList.remove('frozen-on');
+            els.wR2End.classList.remove('frozen-on');
+            
+            runLogic();
+        }
+
+        // Init
+        runLogic();
+
+    </script>
+</body>
+</html>
